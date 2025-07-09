@@ -1,0 +1,17 @@
+services:
+  driftcove:
+    build: .
+    env_file:
+      - ./config.env
+    container_name: driftcove
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    volumes:
+      - ./wireguard:/etc/wireguard
+    ports:
+      - "1194:1194/udp"
+      - 8000:8000
+
+volumes:
+  wireguard-data:
