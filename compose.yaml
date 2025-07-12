@@ -9,6 +9,7 @@ services:
       - SYS_MODULE
     volumes:
       - ./wireguard:/etc/wireguard
+      - ./database:/home/db
     ports:
       - "1194:1194/udp"
       - 8000:8000

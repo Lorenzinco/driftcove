@@ -5,5 +5,5 @@
 A docker image used to create and customize a vpn server
 <br>
 <p align="center">
-    <img src="./logo.png" width="200px">
+    <img src="src/logo.png" width="200px">
 </p>
