@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS peers_subnets(
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (peer_id, subnet),
     FOREIGN KEY (peer_id) REFERENCES peers(id),
-    FOREIGN KEY (subnet) REFERENCES subnets(subnet)
+    FOREIGN KEY (subnet) REFERENCES subnets(subnet) ON DELETE CASCADE
 );
 
 
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS peers_services (
     service_id INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (peer_id, service_id),
-    FOREIGN KEY (peer_id) REFERENCES peers(id),
-    FOREIGN KEY (service_id) REFERENCES services(id),
+    FOREIGN KEY (peer_id) REFERENCES peers(id) ON DELETE CASCADE,
+    FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE,
     CHECK (peer_id != service_id)
 );

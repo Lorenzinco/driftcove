@@ -3,7 +3,7 @@ from app.core.config import verify_token, settings
 from app.core.database import db
 from app.core.iptables import allow_link, remove_link
 from app.core.models import Peer
-from app.core.wireguard import apply_to_wg_config, generate_keys
+from app.core.wireguard import apply_to_wg_config, generate_keys, generate_wg_config, remove_from_wg_config
 from typing import Annotated
 import logging, subprocess
 
@@ -47,29 +47,14 @@ def create_peer(username:str , subnet:str, _: Annotated[str, Depends(verify_toke
     try:
         # if the peer already exists, we remove it first
         if old_peer:
-            subprocess.run([
-                "wg", "set", settings.wg_interface,
-                "peer", old_peer.public_key, "remove"
-            ], check=True)
+            remove_from_wg_config(old_peer)
 
         apply_to_wg_config(peer)
 
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Failed to add peer: {e}")
         
-    configuration = f"""
-[Interface]
-PrivateKey = {keys["private_key"]}
-Address = {peer.address}
-MTU = {settings.mtu}
-
-[Peer]
-PublicKey = {settings.public_key}
-PresharedKey = {peer.preshared_key}
-Endpoint = {settings.endpoint}
-AllowedIPs = {settings.wg_default_subnet}
-PersistentKeepalive = 15
-"""
+    configuration = generate_wg_config(peer, keys["private_key"])
     return {"configuration": configuration}
 
 @router.get("/get_info",tags=["peer"])
@@ -104,10 +89,7 @@ def remove_peer(username: str, _: Annotated[str, Depends(verify_token)]):
             remove_link(peer.address, subnet.subnet)
         for service in peer_services:
             remove_link(peer.address, service.address)
-        subprocess.run([
-            "wg", "set", settings.wg_interface,
-            "peer", peer.public_key, "remove"
-        ], check=True)
+        remove_from_wg_config(peer)
         return {"message": "Peer removed"}
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Failed to remove peer: {e}")
@@ -129,49 +111,4 @@ def get_user_subnets(username: str, _: Annotated[str, Depends(verify_token)]):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
     
-@router.post("/service_connect",tags=["peer"])
-def service_connect(username: str, service_name: str, _: Annotated[str, Depends(verify_token)]):
-    """
-    Connect a peer to a service.
-    This endpoint will add the peer to the service and return the configuration for the peer.
-    """
-    try:
-        peer = db.get_peer_by_username(username)
-        if peer is None:
-            raise HTTPException(status_code=404, detail="Peer not found")
-        
-        service = db.get_service_by_name(service_name)
-        if service is None:
-            raise HTTPException(status_code=404, detail="Service not found")
-        
-        db.add_peer_service_link(peer, service)
-        logging.info(f"Connecting peer {peer.username} to service {service.name}")
-        allow_link(peer.address, service.address)
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
-    return {"message": f"Peer {username} connected to service {service.name}"}
 
-@router.delete("/service_disconnect",tags=["peer"])
-def service_disconnect(username: str, service_name: str, _: Annotated[str, Depends(verify_token)]):
-    """Disconnect a peer from a service.
-    """
-    try:
-        peer = db.get_peer_by_username(username)
-        if peer is None:
-            raise HTTPException(status_code=404, detail="Peer not found")
-        
-        service = db.get_service_by_name(service_name)
-        if service is None:
-            raise HTTPException(status_code=404, detail="Service not found")
-        
-        logging.info(f"Disconnecting peer {peer.username} from service {service.name}")
-        remove_link(peer.address, service.address)
-        db.remove_peer_service_link(peer, service)
-    
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to disconnect peer from service: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
-    return {"message": f"Peer {username} disconnected from service {service.name}"}
-    

@@ -15,7 +15,7 @@ def test_create_subnet():
 
 def test_delete_subnet(subnet="10.42.0.0/24"):
     print(f"\033[94mDeleting subnet {subnet}...\033[0m")
-    r = requests.delete(f"{BASE_URL}/subnet/delete", json={"subnet": subnet}, headers=HEADERS)
+    r = requests.delete(f"{BASE_URL}/subnet/delete", params={"subnet": subnet}, headers=HEADERS)
     print(r.status_code, r.text)
     if r.status_code == 200:
         print("\033[92mSuccessfully deleted subnet\033[0m")
@@ -34,6 +34,15 @@ def test_create_peer(username="testuser", subnet="10.128.0.0/9"):
     else:
         print(f"\033[91mFailed to create peer {r.status_code}: {r.text}\033[0m")
     return r.json()
+
+def test_remove_peer(username="testuser"):
+    print(f"\033[94mDeleting peer {username}...\033[0m")
+    r = requests.delete(f"{BASE_URL}/peer/remove", params={"username": username}, headers=HEADERS)
+    print(r.status_code, r.text)
+    if r.status_code == 200:
+        print("\033[92mSuccessfully removed peer\033[0m")
+    else:
+        print(f"\033[91mFailed to remove peer {r.status_code}: {r.text}\033[0m")
 
 def test_peer_get_info(username="testuser"):
     print(f"\033[94mGetting info for peer {username}...\033[0m")
@@ -103,7 +112,7 @@ def test_create_service(name="Test Service", department="IT", subnet="10.42.0.0/
 
 def test_connect_service(service_name="Test Service", peer_username="testuser"):
     print(f"\033[94mConnecting service {service_name} to peer {peer_username}...\033[0m")
-    r = requests.post(f"{BASE_URL}/peer/service_connect", params={"service_name": service_name, "username": peer_username}, headers=HEADERS)
+    r = requests.post(f"{BASE_URL}/service/connect", params={"service_name": service_name, "username": peer_username}, headers=HEADERS)
     print(r.status_code, r.json())
     if r.status_code == 200:
         print(f"\033[92mSuccessfully connected {peer_username} to {service_name}\033[0m")
@@ -112,7 +121,7 @@ def test_connect_service(service_name="Test Service", peer_username="testuser"):
 
 def test_disconnect_service(service_name="Test Service", peer_username="testuser"):
     print(f"\033[94mDisconnecting service {service_name} from peer {peer_username}...\033[0m")
-    r = requests.delete(f"{BASE_URL}/peer/service_disconnect", params={"service_name": service_name, "username": peer_username}, headers=HEADERS)
+    r = requests.delete(f"{BASE_URL}/service/disconnect", params={"service_name": service_name, "username": peer_username}, headers=HEADERS)
     print(r.status_code, r.text)
     if r.status_code == 200:
         print(f"\033[92mSuccessfully disconnected {peer_username} from {service_name}\033[0m")
@@ -144,6 +153,10 @@ if __name__ == "__main__":
     test_disconnect_service()
     test_get_topology()
     test_delete_service()
+    test_subnet_remove_peer()
+    test_remove_peer()
+    test_delete_subnet()
+    test_get_topology()
 
     # test_create_peer("peer1")
     # test_create_peer("peer2")
@@ -151,7 +164,7 @@ if __name__ == "__main__":
     # test_add_peer_to_subnet("peer2", "10.128.0.0/9")
     # test_subnet_remove_peer("peer1","10.128.0.0/9")
     # test_subnet_remove_peer()
-    test_get_topology()
+    # test_get_topology()
     # test_status()
 
     

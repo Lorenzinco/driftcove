@@ -2,9 +2,11 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import db
+from app.core.iptables import allow_link, flush_iptables, default_policy_drop
+from app.core.models import Subnet
 from app.core.wireguard import apply_to_wg_config
 from app.db.init_db import init_db
-import logging, subprocess
+import logging
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -19,7 +21,7 @@ async def lifespan(app: FastAPI):
         raise
     try:
         logging.info("Resetting iptables rules for WireGuard")
-        subprocess.run(["iptables", "-F", "FORWARD"], check=True)
+        flush_iptables()
 
         subnets = db.get_subnets()
         for subnet in subnets:
@@ -27,18 +29,10 @@ async def lifespan(app: FastAPI):
             for peer in peers:
                 apply_to_wg_config(peer)
                 logging.info(f"Adding route for peer {peer.username} in subnet {subnet.subnet}")
-                subprocess.run([
-                    "iptables", "-A", "FORWARD",
-                    "-i", settings.wg_interface,
-                    "-s", peer.address,
-                    "-d", subnet.subnet,
-                    "-j", "ACCEPT"
-                ], check=True)
+                allow_link(peer.address, subnet.subnet)
 
         logging.info("Every non-allowed traffic will be dropped")
-        subprocess.run([
-            "iptables", "-P", "FORWARD", "DROP"
-        ], check=True)
+        default_policy_drop()
 
         logging.info(f"Loaded {len(subnets)} subnets and {sum(len(db.get_peers_in_subnet(subnet)) for subnet in subnets)} peers from the database.")
 

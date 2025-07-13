@@ -29,3 +29,21 @@ def remove_link(src: str, dst: str):
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to remove link {src} -> {dst}: {e}")
         raise HTTPException(status_code=500, detail="Failed to remove link")
+    
+def flush_iptables():
+    """Flush all iptables rules."""
+    try:
+        subprocess.run(["iptables", "-F", "FORWARD"], check=True)
+        logging.info("Flushed all iptables rules.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to flush iptables: {e}")
+        raise HTTPException(status_code=500, detail="Failed to flush iptables")
+    
+def default_policy_drop():
+    """Set the default policy for the FORWARD chain to DROP."""
+    try:
+        subprocess.run(["iptables", "-P", "FORWARD", "DROP"], check=True)
+        logging.info("Set default policy for FORWARD chain to DROP.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to set default policy: {e}")
+        raise HTTPException(status_code=500, detail="Failed to set default policy")

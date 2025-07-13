@@ -93,6 +93,19 @@ class Database:
             print(f"An error has occurred: {e}")
         return
     
+    def delete_subnet(self, subnet: Subnet):
+        """
+        This function deletes a subnet from the database.
+        """
+        try:
+            self.cursor.execute("""
+                DELETE FROM subnets WHERE subnet = ?
+            """, (subnet.subnet,))
+            self.conn.commit()
+        except sqlite3.Error as e:
+            print(f"An error has occurred: {e}")
+        return
+    
     def get_peer_by_username(self, username: str) -> Peer:
         """
         This function returns a Peer object by its username.
@@ -284,7 +297,7 @@ class Database:
         try:
             self.cursor.execute("""
                 DELETE FROM peers WHERE public_key = ?
-            """, (service.public_key))
+            """, (service.public_key,))
             self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")

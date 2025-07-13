@@ -39,15 +39,6 @@ tags_metadata = [
     }
 ]
 
-# DB_PATH = "/home/db/user_configs.db"
-# WG_INTERFACE = "wg0"
-# API_TOKEN = os.environ.get("WIREGUARD_API_TOKEN", "supersecuretoken")
-# ENDPOINT = os.getenv("WIREGUARD_ENDPOINT", "127.0.0.1:1194")
-# PUBLIC_KEY = os.getenv("WIREGUARD_PUBLIC_KEY", "")
-# WIREGUARD_SUBNET = os.getenv("WIREGUARD_SUBNET","10.128.0.0/9")
-# MTU = os.getenv("WIREGUARD_MTU", "1420")
-
-
 def verify_token(authorization: str = Header(...)):
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid auth scheme")
