@@ -137,6 +137,24 @@ def test_delete_service(service_name="Test Service"):
     else:
         print(f"\033[91mFailed to delete service {service_name} {r.status_code}: {r.text}\033[0m")
 
+def test_add_link_between_peers(peer1_username="testuser", peer2_username="testuser2"):
+    print(f"\033[94mConnecting peers {peer1_username} and {peer2_username}...\033[0m")
+    r = requests.post(f"{BASE_URL}/peer/connect", params={"peer1_username": peer1_username, "peer2_username": peer2_username}, headers=HEADERS)
+    print(r.status_code, r.json())
+    if r.status_code == 200:
+        print(f"\033[92mSuccessfully connected {peer1_username} and {peer2_username}\033[0m")
+    else:
+        print(f"\033[91mFailed to connect {peer1_username} and {peer2_username} {r.status_code}: {r.text}\033[0m")
+
+def test_disconnect_link_between_peers(peer1_username="testuser", peer2_username="testuser2"):
+    print(f"\033[94mDisconnecting peers {peer1_username} and {peer2_username}...\033[0m")
+    r = requests.delete(f"{BASE_URL}/peer/disconnect", params={"peer1_username": peer1_username, "peer2_username": peer2_username}, headers=HEADERS)
+    print(r.status_code, r.text)
+    if r.status_code == 200:
+        print(f"\033[92mSuccessfully disconnected {peer1_username} and {peer2_username}\033[0m")
+    else:
+        print(f"\033[91mFailed to disconnect {peer1_username} and {peer2_username} {r.status_code}: {r.text}\033[0m")
+
 
 
 
@@ -157,6 +175,15 @@ if __name__ == "__main__":
     test_remove_peer()
     test_delete_subnet()
     test_get_topology()
+
+    test_create_peer("peer1")
+    test_create_peer("peer2")
+    test_add_link_between_peers("peer1", "peer2")
+    test_get_topology()
+    test_disconnect_link_between_peers("peer1", "peer2")
+    test_get_topology()
+    test_remove_peer("peer1")
+    test_remove_peer("peer2")
 
     # test_create_peer("peer1")
     # test_create_peer("peer2")

@@ -47,3 +47,13 @@ CREATE TABLE IF NOT EXISTS peers_services (
     FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE,
     CHECK (peer_id != service_id)
 );
+
+CREATE TABLE IF NOT EXISTS peers_peers (
+    peer_one_id INTEGER,
+    peer_two_id INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (peer_one_id, peer_two_id),
+    FOREIGN KEY (peer_one_id) REFERENCES peers(id) ON DELETE CASCADE,
+    FOREIGN KEY (peer_two_id) REFERENCES peers(id) ON DELETE CASCADE
+    CHECK (peer_one_id != peer_two_id)
+);

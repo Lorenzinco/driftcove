@@ -384,6 +384,55 @@ class Database:
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
         return peers
+    
+    def add_link_between_two_peers(self, peer1: Peer, peer2: Peer):
+        """
+        This function adds a link between two peers.
+        It will create the entry in the links table, which is a many-to-many relationship between peers.
+        """
+        try:
+            self.cursor.execute("""
+                INSERT INTO peers_peers (peer_one_id, peer_two_id)
+                VALUES ((SELECT id FROM peers WHERE public_key = ?), (SELECT id FROM peers WHERE public_key = ?))
+            """, (peer1.public_key, peer2.public_key))
+            self.conn.commit()
+        except sqlite3.Error as e:
+            print(f"An error occurred: {e}")
+
+    def remove_link_between_two_peers(self, peer1: Peer, peer2: Peer):
+        """
+        This function removes a link between two peers.
+        It will delete the entry in the links table.
+        """
+        try:
+            self.cursor.execute("""
+                DELETE FROM peers_peers WHERE peer_one_id = (SELECT id FROM peers WHERE public_key = ?) AND peer_two_id = (SELECT id FROM peers WHERE public_key = ?)
+            """, (peer1.public_key, peer2.public_key))
+            self.conn.commit()
+        except sqlite3.Error as e:
+            print(f"An error occurred: {e}")
+
+    def get_links_between_peers(self)->list[tuple[Peer, Peer]]:
+        """
+        This function returns a list of links between peers.
+        It will return a list of tuples, each containing two Peer objects.
+        """
+        links = []
+        try:
+            self.cursor.execute("""
+                SELECT p1.username, p1.public_key, p1.preshared_key, p1.address, p2.username, p2.public_key, p2.preshared_key, p2.address
+                FROM peers_peers pp
+                JOIN peers p1 ON pp.peer_one_id = p1.id
+                JOIN peers p2 ON pp.peer_two_id = p2.id
+            """)
+            links_rows = self.cursor.fetchall()
+            for row in links_rows:
+                peer1 = Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3])
+                peer2 = Peer(username=row[4], public_key=row[5], preshared_key=row[6], address=row[7])
+                links.append((peer1, peer2))
+        except sqlite3.Error as e:
+            print(f"An error occurred: {e}")
+        return links
 
 
     def close(self):

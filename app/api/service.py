@@ -13,8 +13,9 @@ router = APIRouter(tags=["service"])
 @router.post("/create",tags=["service"])
 def create_service(service_name:str, department:str, subnet:str, _: Annotated[str, Depends(verify_token)]):
     """
-    Creates a peer and adds it to the wireguard configuration and returns a config, the assigned ip address is one inside the default subnet, if it already exists, destroys the previous user and creates another one, then returns a config.
-    The peer after the creation cannot really connect to anything, it needs to be "added" to a subnet, which really just enables routes to that subnet for that peer.
+    Creates a service, adds it to the wireguard configuration of the server and returns a config, the assigned ip address is an avaliable one inside the provided subnet. If the service already exists, destroys the previous service and creates another one, then returns a config.
+    The service after the creation cannot really connect to anything, it needs to be "added" to a subnet, which really just enables routes to that subnet for that service.
+    If you wish for selected peers to be able to connect to the service, you need to use the connect endpoint.
     """
     keys = generate_keys()
     old_service = db.get_service_by_name(service_name)
@@ -88,8 +89,8 @@ def delete_service(service_name: str, _: Annotated[str, Depends(verify_token)]):
 @router.post("/connect",tags=["service"])
 def service_connect(username: str, service_name: str, _: Annotated[str, Depends(verify_token)]):
     """
-    Connect a peer to a service.
-    This endpoint will add the peer to the service and return the configuration for the peer.
+    Connect a peer to a service, provice the username of the peer and the name of the service, if both exists,
+    the peer will be added to the users of the service and the link will be allowed in iptables.
     """
     try:
         peer = db.get_peer_by_username(username)
@@ -111,6 +112,8 @@ def service_connect(username: str, service_name: str, _: Annotated[str, Depends(
 @router.delete("/disconnect",tags=["service"])
 def service_disconnect(username: str, service_name: str, _: Annotated[str, Depends(verify_token)]):
     """Disconnect a peer from a service.
+    Provide the username of the peer and the name of the service, if both exist, and are linked,
+    the peer will be removed from the users of the service and the link will be removed in iptables.
     """
     try:
         peer = db.get_peer_by_username(username)
