@@ -28,4 +28,4 @@ export WIREGUARD_PUBLIC_KEY=$(cat /etc/wireguard/publickey)
 wg-quick up wg0
 chmod u+rw /etc/wireguard/wg0.conf
 echo "Wireguard is up, starting the backend..."
-uvicorn src.main:app --host 0.0.0.0 --port $WIREGUARD_API_BACKEND_PORT --log-level debug
+uvicorn app.main:app --host 0.0.0.0 --port $WIREGUARD_API_BACKEND_PORT --log-level debug

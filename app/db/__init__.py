@@ -1,5 +1,5 @@
-from .models import Peer,Service,Subnet
 import ipaddress, sqlite3, logging
+from app.core.models import Peer, Subnet, Service
 
 
 class Database:

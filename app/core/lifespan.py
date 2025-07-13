@@ -1,0 +1,50 @@
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
+from app.core.config import settings
+from app.core.database import db
+from app.core.wireguard import apply_to_wg_config
+from app.db.init_db import init_db
+import logging, subprocess
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # STARTUP CODE
+    logging.basicConfig(level=logging.INFO)
+    logging.info("Starting Driftcove WireGuard API...")
+    try:
+        init_db(settings.db_path)
+        logging.info("Database initialized successfully.")
+    except Exception as e:
+        logging.error(f"Failed to initialize database: {e}")
+        raise
+    try:
+        logging.info("Resetting iptables rules for WireGuard")
+        subprocess.run(["iptables", "-F", "FORWARD"], check=True)
+
+        subnets = db.get_subnets()
+        for subnet in subnets:
+            peers = db.get_peers_in_subnet(subnet)
+            for peer in peers:
+                apply_to_wg_config(peer)
+                logging.info(f"Adding route for peer {peer.username} in subnet {subnet.subnet}")
+                subprocess.run([
+                    "iptables", "-A", "FORWARD",
+                    "-i", settings.wg_interface,
+                    "-s", peer.address,
+                    "-d", subnet.subnet,
+                    "-j", "ACCEPT"
+                ], check=True)
+
+        logging.info("Every non-allowed traffic will be dropped")
+        subprocess.run([
+            "iptables", "-P", "FORWARD", "DROP"
+        ], check=True)
+
+        logging.info(f"Loaded {len(subnets)} subnets and {sum(len(db.get_peers_in_subnet(subnet)) for subnet in subnets)} peers from the database.")
+
+        logging.info("Loading and ")
+    except Exception as e:
+        logging.error(f"Failed to configure WireGuard on startup: {e}")
+        raise
+
+    yield  # control passes to the app here
