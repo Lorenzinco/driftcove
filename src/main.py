@@ -57,7 +57,7 @@ MTU = os.getenv("WIREGUARD_MTU", "1420")
 init_db(DB_PATH)
 db = Database(DB_PATH)
 
-def apply_to_wg_config(peer: Peer|Service, allowed_ips: str):
+def apply_to_wg_config(peer: Peer|Service):
     """Apply the peer configuration to the WireGuard interface."""
     with tempfile.NamedTemporaryFile(mode="w+",delete=False) as tmp_psk:
         tmp_psk.write(peer.preshared_key)
@@ -68,7 +68,7 @@ def apply_to_wg_config(peer: Peer|Service, allowed_ips: str):
             "wg", "set", WG_INTERFACE,
             "peer", peer.public_key,
             "preshared-key", tmp_psk_path,
-            "allowed-ips", allowed_ips
+            "allowed-ips", peer.address
         ], check=True)
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to apply peer config: {e}")
@@ -76,17 +76,66 @@ def apply_to_wg_config(peer: Peer|Service, allowed_ips: str):
     finally:
         os.unlink(tmp_psk_path)
 
+def allow_link(src:str,dst:str):
+    """Allow a link via iptables."""
+    try:
+        subprocess.run([
+            "iptables", "-A", "FORWARD",
+            "-i", WG_INTERFACE,
+            "-s", src,
+            "-d", dst,
+            "-j", "ACCEPT"
+        ], check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to allow link {src} -> {dst}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to allow link")
+
+def remove_link(src: str, dst: str):
+    """Remove an allow rule from iptables, effectively denying the link."""
+    try:
+        subprocess.run([
+            "iptables", "-D", "FORWARD",
+            "-i", WG_INTERFACE,
+            "-s", src,
+            "-d", dst,
+            "-j", "ACCEPT"
+        ], check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to remove link {src} -> {dst}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to remove link")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # STARTUP CODE
     try:
+        logging.info("Resetting iptables rules for WireGuard")
+        subprocess.run(["iptables", "-F", "FORWARD"], check=True)
+
         subnets = db.get_subnets()
         for subnet in subnets:
             peers = db.get_peers_in_subnet(subnet)
-            allowed_ips = ','.join(peer.address for peer in peers)
             for peer in peers:
-                apply_to_wg_config(peer, allowed_ips)
+                apply_to_wg_config(peer)
+                logging.info(f"Adding route for peer {peer.username} in subnet {subnet.subnet}")
+                subprocess.run([
+                    "iptables", "-A", "FORWARD",
+                    "-i", WG_INTERFACE,
+                    "-s", peer.address,
+                    "-d", subnet.subnet,
+                    "-j", "ACCEPT"
+                ], check=True)
+
+        logging.info("Every non-allowed traffic will be dropped")
+        subprocess.run([
+            "iptables", "-A", "FORWARD",
+            "-i", WG_INTERFACE,
+            "-j", "DROP"
+        ], check=True)
+
         logging.info(f"Loaded {len(subnets)} subnets and {sum(len(db.get_peers_in_subnet(subnet)) for subnet in subnets)} peers from the database.")
+
+        logging.info("Loading and ")
     except Exception as e:
         logging.error(f"Failed to configure WireGuard on startup: {e}")
         raise
@@ -149,10 +198,8 @@ def add_peer_to_subnet(username: str, subnet: str, _: Annotated[str, Depends(ver
             raise HTTPException(status_code=404, detail="Subnet not found")
 
         db.add_peer_to_subnet(peer, subnet)
-        active_subnets = db.get_peers_subnets(peer)
-        allowed_ips = ','.join(subnet.subnet for subnet in active_subnets)
-        
-        apply_to_wg_config(peer, allowed_ips)
+        logging.info(f"Adding peer {peer.username} to subnet {subnet.subnet}")
+        allow_link(peer.address, subnet.subnet)
 
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Failed to add peer to subnet: {e}")
@@ -172,9 +219,8 @@ def delete_subnet(subnet: str, _: Annotated[str, Depends(verify_token)]):
         peers = db.get_peers_in_subnet(subnet)
         for peer in peers:
             db.remove_peer_from_subnet(peer, subnet)
-            active_subnets = db.get_peers_subnets(peer)
-            allowed_ips = ','.join(subnet.subnet for subnet in active_subnets)
-            apply_to_wg_config(peer, allowed_ips)
+            logging.info(f"Removing subnet {subnet.subnet} from peer {peer.username}")
+            remove_link(peer.address, subnet.subnet)
         db.delete_subnet(subnet)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
@@ -196,17 +242,8 @@ def remove_peer_from_subnet(username: str, subnet: str, _: Annotated[str, Depend
             raise HTTPException(status_code=404, detail="Subnet not found")
         
         db.remove_peer_from_subnet(peer, subnet)
-        active_subnets = db.get_peers_subnets(peer)
-        if len(active_subnets) == 0:
-            subprocess.run([
-                "wg", "set", WG_INTERFACE,
-                "peer", peer.public_key,
-                "preshared-key", peer.preshared_key,
-                "remove"
-            ], check=True)
-        else:
-            allowed_ips = ','.join(subnet.subnet for subnet in active_subnets)
-            apply_to_wg_config(peer, allowed_ips)
+        logging.info(f"Removing subnet {subnet.subnet} from peer {peer.username}")
+        remove_link(peer.address, subnet.subnet)
 
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Failed to remove peer from subnet: {e}")
@@ -294,7 +331,7 @@ def create_peer(username:str , subnet:str, _: Annotated[str, Depends(verify_toke
                 "peer", old_peer.public_key, "remove"
             ], check=True)
 
-        apply_to_wg_config(peer, "")
+        apply_to_wg_config(peer)
 
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Failed to add peer: {e}")
@@ -340,6 +377,12 @@ def remove_peer(username: str, _: Annotated[str, Depends(verify_token)]):
         peer = db.get_peer_by_username(username)
         if peer is None:
             raise HTTPException(status_code=404, detail="Peer not found")
+        peer_subnets = db.get_peers_subnets(peer)
+        peer_services = db.get_peers_services(peer)
+        for subnet in peer_subnets:
+            remove_link(peer.address, subnet.subnet)
+        for service in peer_services:
+            remove_link(peer.address, service.address)
         subprocess.run([
             "wg", "set", WG_INTERFACE,
             "peer", peer.public_key, "remove"
@@ -381,16 +424,8 @@ def service_connect(username: str, service_name: str, _: Annotated[str, Depends(
             raise HTTPException(status_code=404, detail="Service not found")
         
         db.add_peer_service_link(peer, service)
-        subnets = db.get_peers_subnets(peer)
-        services = db.get_peers_services(peer)
-        allowed_ips = ','.join(
-            filter(None, [
-            ','.join(subnet.subnet for subnet in subnets),
-            ','.join(service.address for service in services)
-            ])
-        )
-        
-        apply_to_wg_config(peer, allowed_ips)
+        logging.info(f"Connecting peer {peer.username} to service {service.name}")
+        allow_link(peer.address, service.address)
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
@@ -409,17 +444,9 @@ def service_disconnect(username: str, service_name: str, _: Annotated[str, Depen
         if service is None:
             raise HTTPException(status_code=404, detail="Service not found")
         
+        logging.info(f"Disconnecting peer {peer.username} from service {service.name}")
+        remove_link(peer.address, service.address)
         db.remove_peer_service_link(peer, service)
-        subnets = db.get_peers_subnets(peer)
-        services = db.get_peers_services(peer)
-        allowed_ips = ','.join(
-            filter(None, [
-            ','.join(subnet.subnet for subnet in subnets),
-            ','.join(service.address for service in services)
-            ])
-        )
-
-        apply_to_wg_config(peer, allowed_ips)
     
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Failed to disconnect peer from service: {e}")
@@ -480,7 +507,7 @@ def create_service(service_name:str, department:str, subnet:str, _: Annotated[st
                 "peer", service.public_key, "remove"
             ], check=True)
 
-        apply_to_wg_config(service, "")
+        apply_to_wg_config(service)
 
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Failed to add peer: {e}")
@@ -516,17 +543,9 @@ def delete_service(service_name: str, _: Annotated[str, Depends(verify_token)]):
         peers_linked = db.get_service_peers(service)
         # Remove the service from the allowed IPs of the peers
         for peer in peers_linked:
-            db.remove_user_service_link(peer, service)
-            active_subnets = db.get_peers_subnets(peer)
-            active_services = db.get_peers_services(peer)
-            allowed_ips = ','.join(
-            filter(None, [
-                ','.join(subnet.subnet for subnet in active_subnets),
-                ','.join(service.address for service in active_services)
-                ])
-            )
-            apply_to_wg_config(peer, allowed_ips)
-
+            logging.info(f"Removing service {service.name} from peer {peer.username}")
+            remove_link(peer.address, service.address)
+            db.remove_peer_service_link(peer, service)
         db.delete_service(service)
         
     except subprocess.CalledProcessError as e:

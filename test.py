@@ -145,10 +145,13 @@ if __name__ == "__main__":
     test_get_topology()
     test_delete_service()
 
-    
+    # test_create_peer("peer1")
+    # test_create_peer("peer2")
+    # test_add_peer_to_subnet("peer1", "10.128.0.0/9")
+    # test_add_peer_to_subnet("peer2", "10.128.0.0/9")
     
     # test_subnet_remove_peer()
-    # test_get_topology()
+    test_get_topology()
     # test_status()
 
     

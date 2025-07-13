@@ -16,9 +16,8 @@ def init_db(db_path):
     # pick the first usable IP address in the subnet
     first_ip = str(next(net.hosts()))
 
-    # Create a table (example: users)
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
+    CREATE TABLE IF NOT EXISTS peers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT NOT NULL UNIQUE,
         address TEXT NOT NULL UNIQUE,
@@ -33,7 +32,7 @@ def init_db(db_path):
         name TEXT NOT NULL UNIQUE,
         department TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (id) REFERENCES users(id) ON DELETE CASCADE
+        FOREIGN KEY (id) REFERENCES peers(id) ON DELETE CASCADE
     )""")
 
     cursor.execute("""        
@@ -45,24 +44,24 @@ def init_db(db_path):
     )""")
 
     cursor.execute("""        
-    CREATE TABLE IF NOT EXISTS user_subnets(
-        user_id INTEGER,
+    CREATE TABLE IF NOT EXISTS peers_subnets(
+        peer_id INTEGER,
         subnet TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (user_id, subnet),
-        FOREIGN KEY (user_id) REFERENCES users(id),
+        PRIMARY KEY (peer_id, subnet),
+        FOREIGN KEY (peer_id) REFERENCES peers(id),
         FOREIGN KEY (subnet) REFERENCES subnets(subnet)
     )""")
 
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS user_services (
-        user_id INTEGER,
+    CREATE TABLE IF NOT EXISTS peers_services (
+        peer_id INTEGER,
         service_id INTEGER,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (user_id, service_id),
-        FOREIGN KEY (user_id) REFERENCES users(id),
+        PRIMARY KEY (peer_id, service_id),
+        FOREIGN KEY (peer_id) REFERENCES peers(id),
         FOREIGN KEY (service_id) REFERENCES services(id),
-        CHECK (user_id != service_id)
+        CHECK (peer_id != service_id)
     )""")
 
     cursor.execute("""
@@ -70,13 +69,13 @@ def init_db(db_path):
     VALUES (?, ?, ?)
     """, (WIREGUARD_SUBNET, "Wireguard Subnet", "This is the subnet for the WireGuard configuration."))
     cursor.execute("""
-    INSERT OR IGNORE INTO users (username, address, public_key, preshared_key)
+    INSERT OR IGNORE INTO peers (username, address, public_key, preshared_key)
     VALUES (?, ?, ?, ?)
     """, ("master", first_ip, PUBLIC_KEY, PRESHARED_KEY))
 
     cursor.execute("""
-                   INSERT OR IGNORE INTO user_subnets (user_id, subnet)
-                     SELECT id, ? FROM users WHERE username = ?
+                   INSERT OR IGNORE INTO peers_subnets (peer_id, subnet)
+                     SELECT id, ? FROM peers WHERE username = ?
                      """, (WIREGUARD_SUBNET, "master"))
     # Commit changes and close connection
     conn.commit()

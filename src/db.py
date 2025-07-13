@@ -15,7 +15,7 @@ class Database:
         """
         try:
             self.cursor.execute("""
-                INSERT INTO users (username, public_key, preshared_key, address)
+                INSERT INTO peers (username, public_key, preshared_key, address)
                 VALUES (?, ?, ?, ?)
             """, (peer.username, peer.public_key, peer.preshared_key, peer.address))
             self.conn.commit()
@@ -32,7 +32,7 @@ class Database:
         """
         try:
             self.cursor.execute("""
-                DELETE FROM users WHERE public_key = ?
+                DELETE FROM peers WHERE public_key = ?
             """, (peer.public_key,))
             self.conn.commit()
         except sqlite3.Error as e:
@@ -46,7 +46,7 @@ class Database:
         """
         try:
             self.cursor.execute("""
-                SELECT address FROM users
+                SELECT address FROM peers
             """)
             all_addresses = [row[0] for row in self.cursor.fetchall()]
             net = ipaddress.ip_network(subnet.subnet, strict=False)
@@ -67,7 +67,7 @@ class Database:
         """
         try:
             self.cursor.execute("""
-                SELECT username FROM users
+                SELECT username FROM peers
             """)
             all_usernames = {row[0] for row in self.cursor.fetchall()}
             for i in range(1, 10000):  # Arbitrary limit to avoid infinite loop
@@ -101,7 +101,7 @@ class Database:
         try:
             self.cursor.execute("""
                 SELECT username, public_key, preshared_key, address
-                FROM users WHERE username = ?
+                FROM peers WHERE username = ?
             """, (username,))
             row = self.cursor.fetchone()
             if row:
@@ -156,13 +156,13 @@ class Database:
     def add_peer_to_subnet(self, peer: Peer, subnet: Subnet):
         """
         This function adds a peer to a subnet.
-        It will create the entry in the user_subnets table, which is a many-to-many relationship between users and subnets.
+        It will create the entry in the peer_subnets table, which is a many-to-many relationship between peers and subnets.
         """
         try:
             self.cursor.execute("""
-                INSERT INTO user_subnets (user_id, subnet)
-                VALUES ((SELECT id FROM users WHERE public_key = ?), ?)
-                ON CONFLICT(user_id, subnet) DO NOTHING
+                INSERT INTO peers_subnets (peer_id, subnet)
+                VALUES ((SELECT id FROM peers WHERE public_key = ?), ?)
+                ON CONFLICT(peer_id, subnet) DO NOTHING
             """, (peer.public_key, subnet.subnet))
             self.conn.commit()
         except sqlite3.Error as e:
@@ -172,11 +172,11 @@ class Database:
     def remove_peer_from_subnet(self, peer: Peer, subnet: Subnet):
         """
         This function removes a peer from a subnet.
-        It will delete the entry in the user_subnets table.
+        It will delete the entry in the peer_subnets table.
         """
         try:
             self.cursor.execute("""
-                DELETE FROM user_subnets WHERE user_id = (SELECT id FROM users WHERE public_key = ?) AND subnet = ?
+                DELETE FROM peers_subnets WHERE peer_id = (SELECT id FROM peers WHERE public_key = ?) AND subnet = ?
             """, (peer.public_key, subnet.subnet))
             self.conn.commit()
         except sqlite3.Error as e:
@@ -193,9 +193,9 @@ class Database:
             self.cursor.execute("""
                 SELECT s.subnet, s.name, s.description
                 FROM subnets s
-                JOIN user_subnets us ON s.subnet = us.subnet
-                JOIN users u ON us.user_id = u.id
-                WHERE u.public_key = ?
+                JOIN peers_subnets ps ON s.subnet = ps.subnet
+                JOIN peers p ON ps.peer_id = p.id
+                WHERE p.public_key = ?
             """, (peer.public_key,))
             subnets_rows = self.cursor.fetchall()
             for row in subnets_rows:
@@ -212,10 +212,10 @@ class Database:
         peers = []
         try:
             self.cursor.execute("""
-                SELECT u.username, u.public_key, u.preshared_key, u.address
-                FROM users u
-                JOIN user_subnets us ON u.id = us.user_id
-                WHERE us.subnet = ?
+                SELECT p.username, p.public_key, p.preshared_key, p.address
+                FROM peers p
+                JOIN peers_subnets ps ON p.id = ps.peer_id
+                WHERE ps.subnet = ?
             """, (subnet.subnet,))
             peers_rows = self.cursor.fetchall()
             for row in peers_rows:
@@ -226,52 +226,52 @@ class Database:
     
     def create_service(self, service: Service):
         try:
-            # Insert into users table
+            # Insert into peers table
             self.cursor.execute("""
-                INSERT INTO users (username, address, public_key, preshared_key)
+                INSERT INTO peers (username, address, public_key, preshared_key)
                 VALUES (?, ?, ?, ?)
             """, (service.username, service.address, service.public_key, service.preshared_key))
 
             # Get the user ID (auto-incremented primary key)
-            user_id = self.cursor.lastrowid
+            peer_id = self.cursor.lastrowid
 
             # Insert into services table using the same ID
             self.cursor.execute("""
                 INSERT INTO services (id, name, department)
                 VALUES (?, ?, ?)
-            """, (user_id, service.name, service.department))
+            """, (peer_id, service.name, service.department))
 
             self.conn.commit()
-            return user_id
+            return peer_id
 
         except Exception as e:
             self.conn.rollback()
-            raise Exception(f"Failed to create service user: {e}")
+            raise Exception(f"Failed to create service peer: {e}")
         
-    def add_peer_service_link(self, user: Peer, service: Service):
+    def add_peer_service_link(self, peer: Peer, service: Service):
         """
-        This function adds a link between a user and a service.
-        It will create the entry in the user_services table, which is a many-to-many relationship between users and services.
+        This function adds a link between a peer and a service.
+        It will create the entry in the peers_services table, which is a many-to-many relationship between peers and services.
         """
         try:
             self.cursor.execute("""
-                INSERT INTO user_services (user_id, service_id)
-                VALUES ((SELECT id FROM users WHERE public_key = ?), (SELECT id FROM services WHERE name = ?))
-                ON CONFLICT(user_id, service_id) DO NOTHING
-            """, (user.public_key, service.name))
+                INSERT INTO peers_services (peer_id, service_id)
+                VALUES ((SELECT id FROM peers WHERE public_key = ?), (SELECT id FROM services WHERE name = ?))
+                ON CONFLICT(peer_id, service_id) DO NOTHING
+            """, (peer.public_key, service.name))
             self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
 
-    def remove_peer_service_link(self, user: Peer, service: Service):
+    def remove_peer_service_link(self, peer: Peer, service: Service):
         """
-        This function removes a link between a user and a service.
-        It will delete the entry in the user_services table.
+        This function removes a link between a peer and a service.
+        It will delete the entry in the peer_services table.
         """
         try:
             self.cursor.execute("""
-                DELETE FROM user_services WHERE user_id = (SELECT id FROM users WHERE public_key = ?) AND service_id = (SELECT id FROM services WHERE name = ?)
-            """, (user.public_key, service.name))
+                DELETE FROM peers_services WHERE peer_id = (SELECT id FROM peers WHERE public_key = ?) AND service_id = (SELECT id FROM services WHERE name = ?)
+            """, (peer.public_key, service.name))
             self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
@@ -279,17 +279,17 @@ class Database:
     def delete_service(self, service: Service):
         """
         This function deletes a service from the database.
-        It will delete the entry in the services table and the corresponding user in the users table.
+        It will delete the entry in the services table and the corresponding peer in the peers table.
         """
         try:
             self.cursor.execute("""
-                DELETE FROM users WHERE public_key = ?
+                DELETE FROM peers WHERE public_key = ?
             """, (service.public_key))
             self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
 
-    def get_peers_services(self, user: Peer) -> list[Service]:
+    def get_peers_services(self, peer: Peer) -> list[Service]:
         """
         This function returns a list of services that a user is part of.
         It will return a list of Service objects.
@@ -297,15 +297,15 @@ class Database:
         services = []
         try:
             self.cursor.execute("""
-                SELECT s.name, s.department, u.public_key, u.preshared_key, u.address
+                SELECT s.name, s.department, p.public_key, p.preshared_key, p.address
                 FROM services s
-                JOIN user_services us ON s.id = us.service_id
-                JOIN users u ON us.user_id = u.id
-                WHERE u.public_key = ?
-            """, (user.public_key,))
+                JOIN peers_services ps ON s.id = ps.service_id
+                JOIN peers p ON ps.peer_id = p.id
+                WHERE p.public_key = ?
+            """, (peer.public_key,))
             services_rows = self.cursor.fetchall()
             for row in services_rows:
-                services.append(Service(username=user.username, public_key=row[2], preshared_key=row[3], address=row[4], name=row[0], department=row[1]))
+                services.append(Service(username=peer.username, public_key=row[2], preshared_key=row[3], address=row[4], name=row[0], department=row[1]))
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
         return services
@@ -319,9 +319,9 @@ class Database:
         services = []
         try:
             self.cursor.execute("""
-                SELECT u.username, u.public_key, u.preshared_key, u.address, s.name, s.department
-                FROM users u
-                JOIN services s ON u.id = s.id
+                SELECT p.username, p.public_key, p.preshared_key, p.address, s.name, s.department
+                FROM peers p
+                JOIN services s ON p.id = s.id
             """)
             services_rows = self.cursor.fetchall()
             for row in services_rows:
@@ -337,9 +337,9 @@ class Database:
         """
         try:
             self.cursor.execute("""
-                SELECT u.username, u.public_key, u.preshared_key, u.address, s.name, s.department
-                FROM users u
-                JOIN services s ON u.id = s.id
+                SELECT p.username, p.public_key, p.preshared_key, p.address, s.name, s.department
+                FROM peers p
+                JOIN services s ON p.id = s.id
                 WHERE s.name = ?
             """, (name,))
             row = self.cursor.fetchone()
@@ -359,10 +359,10 @@ class Database:
         peers = []
         try:
             self.cursor.execute("""
-                SELECT u.username, u.public_key, u.preshared_key, u.address
-                FROM users u
-                JOIN user_services us ON u.id = us.user_id
-                JOIN services s ON us.service_id = s.id
+                SELECT p.username, p.public_key, p.preshared_key, p.address
+                FROM peers p
+                JOIN peers_services ps ON p.id = ps.peer_id
+                JOIN services s ON ps.service_id = s.id
                 WHERE s.name = ?
             """, (service.name,))
             peers_rows = self.cursor.fetchall()
