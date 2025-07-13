@@ -346,7 +346,7 @@ PublicKey = {PUBLIC_KEY}
 PresharedKey = {peer.preshared_key}
 Endpoint = {ENDPOINT}
 AllowedIPs = {WIREGUARD_SUBNET}
-PersistentKeepalive = 25
+PersistentKeepalive = 15
 """
     return {"configuration": configuration}
 
@@ -522,7 +522,7 @@ PublicKey = {PUBLIC_KEY}
 PresharedKey = {service.preshared_key}
 Endpoint = {ENDPOINT}
 AllowedIPs = {WIREGUARD_SUBNET}
-PersistentKeepalive = 25
+PersistentKeepalive = 15
 """
     return {"configuration": configuration}
 
