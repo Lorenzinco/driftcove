@@ -17,6 +17,7 @@ if [ ! -f "$WG_CONF" ]; then
 Address = ${WIREGUARD_SUBNET:-10.8.0.0/24}
 ListenPort = $WIREGUARD_UDP_PORT
 PrivateKey = $PRIVATE_KEY
+MTU = ${WIREGUARD_MTU:-1420}
 PostUp = iptables -t nat -A POSTROUTING -s ${WIREGUARD_SUBNET:-10.8.0.0/24} -o eth0 -j MASQUERADE
 PostDown = iptables -t nat -D POSTROUTING -s ${WIREGUARD_SUBNET:-10.8.0.0/24} -o eth0 -j MASQUERADE
 EOF
@@ -27,4 +28,4 @@ export PUBLIC_KEY=$(cat /etc/wireguard/publickey)
 wg-quick up wg0
 chmod u+rw /etc/wireguard/wg0.conf
 echo "Wireguard is up, starting the backend..."
-uvicorn src.main:app --host 0.0.0.0 --port $WIREGUARD_API_BACKEND_PORT --log-level info
+uvicorn src.main:app --host 0.0.0.0 --port $WIREGUARD_API_BACKEND_PORT --log-level debug

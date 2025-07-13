@@ -3,6 +3,7 @@ from pydantic import BaseModel
 class Peer(BaseModel):
     username: str
     public_key: str
+    preshared_key: str
     address: str
 
 class Service(Peer):

@@ -1,9 +1,6 @@
 from .models import Peer,Service,Subnet
-import ipaddress
-import sqlite3
-import logging
+import ipaddress, sqlite3, logging
 
-db_path = "/etc/wireguard/user_configs.db"
 
 class Database:
     def __init__(self, db_path):
@@ -18,9 +15,9 @@ class Database:
         """
         try:
             self.cursor.execute("""
-                INSERT INTO users (username, public_key, address)
-                VALUES (?, ?, ?)
-            """, (peer.username, peer.public_key, peer.address))
+                INSERT INTO users (username, public_key, preshared_key, address)
+                VALUES (?, ?, ?, ?)
+            """, (peer.username, peer.public_key, peer.preshared_key, peer.address))
             self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
@@ -103,12 +100,12 @@ class Database:
         """
         try:
             self.cursor.execute("""
-                SELECT username, public_key, address
+                SELECT username, public_key, preshared_key, address
                 FROM users WHERE username = ?
             """, (username,))
             row = self.cursor.fetchone()
             if row:
-                return Peer(username=row[0], public_key=row[1], address=row[2])
+                return Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3])
             else:
                 return None
         except sqlite3.Error as e:
@@ -155,22 +152,6 @@ class Database:
             print(f"An error occurred: {e}")
             return None
     
-    def update_service(self, peer: Service):
-        """
-        This function can be seen as an abstraction for the update and creation of a service, it will update the service if it exists, or create it if it does not.
-        Input fields are the service's name, department, public key and allowed IPs.
-        """
-        try:
-            self.cursor.execute("""
-                INSERT INTO services (name, department, public_key, allowed_ips)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(public_key) DO UPDATE SET
-                allowed_ips = excluded.allowed_ips
-            """, (peer.name, peer.department, peer.public_key, peer.allowed_ips))
-            self.conn.commit()
-        except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
-        return
 
     def add_peer_to_subnet(self, peer: Peer, subnet: Subnet):
         """
@@ -231,14 +212,14 @@ class Database:
         peers = []
         try:
             self.cursor.execute("""
-                SELECT u.username, u.public_key, u.address
+                SELECT u.username, u.public_key, u.preshared_key, u.address
                 FROM users u
                 JOIN user_subnets us ON u.id = us.user_id
                 WHERE us.subnet = ?
             """, (subnet.subnet,))
             peers_rows = self.cursor.fetchall()
             for row in peers_rows:
-                peers.append(Peer(username=row[0], public_key=row[1], address=row[2]))
+                peers.append(Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3]))
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
         return peers
@@ -247,9 +228,9 @@ class Database:
         try:
             # Insert into users table
             self.cursor.execute("""
-                INSERT INTO users (username, address, public_key)
-                VALUES (?, ?, ?)
-            """, (service.username, service.address, service.public_key))
+                INSERT INTO users (username, address, public_key, preshared_key)
+                VALUES (?, ?, ?, ?)
+            """, (service.username, service.address, service.public_key, service.preshared_key))
 
             # Get the user ID (auto-incremented primary key)
             user_id = self.cursor.lastrowid
@@ -303,7 +284,7 @@ class Database:
         try:
             self.cursor.execute("""
                 DELETE FROM users WHERE public_key = ?
-            """, (service.public_key,))
+            """, (service.public_key))
             self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
@@ -316,7 +297,7 @@ class Database:
         services = []
         try:
             self.cursor.execute("""
-                SELECT s.name, s.department, u.public_key, u.address
+                SELECT s.name, s.department, u.public_key, u.preshared_key, u.address
                 FROM services s
                 JOIN user_services us ON s.id = us.service_id
                 JOIN users u ON us.user_id = u.id
@@ -324,7 +305,7 @@ class Database:
             """, (user.public_key,))
             services_rows = self.cursor.fetchall()
             for row in services_rows:
-                services.append(Service(username=user.username, public_key=row[2], address=row[3], name=row[0], department=row[1]))
+                services.append(Service(username=user.username, public_key=row[2], preshared_key=row[3], address=row[4], name=row[0], department=row[1]))
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
         return services
@@ -338,13 +319,13 @@ class Database:
         services = []
         try:
             self.cursor.execute("""
-                SELECT u.username, u.public_key, u.address, s.name, s.department
+                SELECT u.username, u.public_key, u.preshared_key, u.address, s.name, s.department
                 FROM users u
                 JOIN services s ON u.id = s.id
             """)
             services_rows = self.cursor.fetchall()
             for row in services_rows:
-                services.append(Service(username=row[0], public_key=row[1], address=row[2], name=row[3], department=row[4]))
+                services.append(Service(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], name=row[4], department=row[5]))
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
         return services
@@ -356,14 +337,14 @@ class Database:
         """
         try:
             self.cursor.execute("""
-                SELECT u.username, u.public_key, u.address, s.name, s.department
+                SELECT u.username, u.public_key, u.preshared_key, u.address, s.name, s.department
                 FROM users u
                 JOIN services s ON u.id = s.id
                 WHERE s.name = ?
             """, (name,))
             row = self.cursor.fetchone()
             if row:
-                return Service(username=row[0], public_key=row[1], address=row[2], name=row[3], department=row[4])
+                return Service(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], name=row[4], department=row[5])
             else:
                 return None
         except sqlite3.Error as e:
@@ -378,7 +359,7 @@ class Database:
         peers = []
         try:
             self.cursor.execute("""
-                SELECT u.username, u.public_key, u.address
+                SELECT u.username, u.public_key, u.preshared_key, u.address
                 FROM users u
                 JOIN user_services us ON u.id = us.user_id
                 JOIN services s ON us.service_id = s.id
@@ -386,7 +367,7 @@ class Database:
             """, (service.name,))
             peers_rows = self.cursor.fetchall()
             for row in peers_rows:
-                peers.append(Peer(username=row[0], public_key=row[1], address=row[2]))
+                peers.append(Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3]))
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
         return peers

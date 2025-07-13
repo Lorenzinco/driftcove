@@ -5,9 +5,7 @@ from .init_db import init_db
 from .models import Peer,Service,Subnet
 from typing import Annotated
 from contextlib import asynccontextmanager
-import subprocess
-import logging
-import os
+import tempfile, subprocess, logging, os
 
 description = """
 # Driftcove VPN server🔑
@@ -51,12 +49,32 @@ tags_metadata = [
 
 DB_PATH = "/home/db/user_configs.db"
 WG_INTERFACE = "wg0"
-API_TOKEN = os.environ.get("WG_API_TOKEN", "supersecuretoken")
-ENDPOINT = os.getenv("WG_ENDPOINT", "localhost:51820")
+API_TOKEN = os.environ.get("WIREGUARD_API_TOKEN", "supersecuretoken")
+ENDPOINT = os.getenv("WIREGUARD_ENDPOINT", "127.0.0.1:1194")
 WIREGUARD_SUBNET = os.getenv("WIREGUARD_SUBNET","10.128.0.0/9")
+MTU = os.getenv("WIREGUARD_MTU", "1420")
 
 init_db(DB_PATH)
 db = Database(DB_PATH)
+
+def apply_to_wg_config(peer: Peer|Service, allowed_ips: str):
+    """Apply the peer configuration to the WireGuard interface."""
+    with tempfile.NamedTemporaryFile(mode="w+",delete=False) as tmp_psk:
+        tmp_psk.write(peer.preshared_key)
+        tmp_psk.flush()
+        tmp_psk_path = tmp_psk.name
+    try:
+        subprocess.run([
+            "wg", "set", WG_INTERFACE,
+            "peer", peer.public_key,
+            "preshared-key", tmp_psk_path,
+            "allowed-ips", allowed_ips
+        ], check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to apply peer config: {e}")
+        raise HTTPException(status_code=500, detail="Failed to apply peer configuration")
+    finally:
+        os.unlink(tmp_psk_path)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -67,11 +85,7 @@ async def lifespan(app: FastAPI):
             peers = db.get_peers_in_subnet(subnet)
             allowed_ips = ','.join(peer.address for peer in peers)
             for peer in peers:
-                subprocess.run([
-                    "wg", "set", WG_INTERFACE,
-                    "peer", peer.public_key,
-                    "allowed-ips", allowed_ips
-                ], check=True)
+                apply_to_wg_config(peer, allowed_ips)
         logging.info(f"Loaded {len(subnets)} subnets and {sum(len(db.get_peers_in_subnet(subnet)) for subnet in subnets)} peers from the database.")
     except Exception as e:
         logging.error(f"Failed to configure WireGuard on startup: {e}")
@@ -99,11 +113,10 @@ def verify_token(authorization: str = Header(...)):
 def generate_keys():
     try:
         private_key = subprocess.check_output(["wg", "genkey"]).decode().strip()
-        proc = subprocess.Popen(["wg", "pubkey"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-        public_key, _ = proc.communicate(input=private_key.encode())
-        public_key = public_key.decode().strip()
+        public_key = subprocess.check_output(["wg", "pubkey"], input=private_key.encode()).decode().strip()
+        preshared_key = subprocess.check_output(["wg", "genpsk"]).decode().strip()
 
-        return {"private_key": private_key, "public_key": public_key}
+        return {"private_key": private_key, "public_key": public_key, "preshared_key": preshared_key}
 
     except subprocess.CalledProcessError as e:
         print(f"Key generation failed: {e}")
@@ -139,11 +152,8 @@ def add_peer_to_subnet(username: str, subnet: str, _: Annotated[str, Depends(ver
         active_subnets = db.get_peers_subnets(peer)
         allowed_ips = ','.join(subnet.subnet for subnet in active_subnets)
         
-        subprocess.run([
-            "wg", "set", WG_INTERFACE,
-            "peer", peer.public_key,
-            "allowed-ips", allowed_ips
-        ], check=True)
+        apply_to_wg_config(peer, allowed_ips)
+
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Failed to add peer to subnet: {e}")
     except Exception as e:
@@ -164,11 +174,7 @@ def delete_subnet(subnet: str, _: Annotated[str, Depends(verify_token)]):
             db.remove_peer_from_subnet(peer, subnet)
             active_subnets = db.get_peers_subnets(peer)
             allowed_ips = ','.join(subnet.subnet for subnet in active_subnets)
-            subprocess.run([
-                "wg", "set", WG_INTERFACE,
-                "peer", peer.public_key,
-                "allowed-ips", allowed_ips
-            ], check=True)
+            apply_to_wg_config(peer, allowed_ips)
         db.delete_subnet(subnet)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
@@ -195,15 +201,13 @@ def remove_peer_from_subnet(username: str, subnet: str, _: Annotated[str, Depend
             subprocess.run([
                 "wg", "set", WG_INTERFACE,
                 "peer", peer.public_key,
+                "preshared-key", peer.preshared_key,
                 "remove"
             ], check=True)
         else:
             allowed_ips = ','.join(subnet.subnet for subnet in active_subnets)
-            subprocess.run([
-                "wg", "set", WG_INTERFACE,
-                "peer", peer.public_key,
-                "allowed-ips", allowed_ips
-            ], check=True)
+            apply_to_wg_config(peer, allowed_ips)
+
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Failed to remove peer from subnet: {e}")
     except Exception as e:
@@ -277,7 +281,7 @@ def create_peer(username:str , subnet:str, _: Annotated[str, Depends(verify_toke
             raise HTTPException(status_code=500, detail="No available IPs in subnet")
         logging.warning(f"Assigned IP {address} to peer {username}")
 
-        peer = Peer(username=username, public_key=keys["public_key"], address=address)
+        peer = Peer(username=username, public_key=keys["public_key"], preshared_key=keys["preshared_key"], address=address)
         logging.warning(f"Adding peer {peer} to the database")
         db.create_peer(peer)
     except Exception as e:
@@ -290,11 +294,8 @@ def create_peer(username:str , subnet:str, _: Annotated[str, Depends(verify_toke
                 "peer", old_peer.public_key, "remove"
             ], check=True)
 
-        subprocess.run([
-            "wg", "set", WG_INTERFACE,
-            "peer", peer.public_key,
-            "allowed-ips", ""
-        ], check=True)
+        apply_to_wg_config(peer, "")
+
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Failed to add peer: {e}")
         
@@ -302,10 +303,11 @@ def create_peer(username:str , subnet:str, _: Annotated[str, Depends(verify_toke
 [Interface]
 PrivateKey = {keys["private_key"]}
 Address = {peer.address}
-DNS = ""
+MTU = {MTU}
 
 [Peer]
 PublicKey = {peer.public_key}
+PresharedKey = {peer.preshared_key}
 Endpoint = {ENDPOINT}
 AllowedIPs = {WIREGUARD_SUBNET}
 PersistentKeepalive = 25
@@ -388,11 +390,7 @@ def service_connect(username: str, service_name: str, _: Annotated[str, Depends(
             ])
         )
         
-        subprocess.run([
-            "wg", "set", WG_INTERFACE,
-            "peer", peer.public_key,
-            "allowed-ips", allowed_ips
-        ], check=True)
+        apply_to_wg_config(peer, allowed_ips)
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
@@ -421,11 +419,7 @@ def service_disconnect(username: str, service_name: str, _: Annotated[str, Depen
             ])
         )
 
-        subprocess.run([
-            "wg", "set", WG_INTERFACE,
-            "peer", peer.public_key,
-            "allowed-ips", allowed_ips
-        ], check=True)
+        apply_to_wg_config(peer, allowed_ips)
     
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Failed to disconnect peer from service: {e}")
@@ -450,7 +444,7 @@ def create_service(service_name:str, department:str, subnet:str, _: Annotated[st
     """
     keys = generate_keys()
     old_service = db.get_service_by_name(service_name)
-    logging.warning(f"Creating service {service_name} with public key {keys['public_key']}")
+    logging.warning(f"Creating service {service_name} with public key {keys['public_key']}, preshared key {keys['preshared_key']}")
     logging.warning(f"Old service: {old_service}, if none, it will be created anew")
 
     
@@ -473,7 +467,7 @@ def create_service(service_name:str, department:str, subnet:str, _: Annotated[st
         logging.warning(f"Assigned IP {address} to peer {service_name}")
 
         username = db.get_avaliable_username_for_service()
-        service = Service(username=username, public_key=keys["public_key"], address=address, name=service_name, department=department)
+        service = Service(username=username, public_key=keys["public_key"], preshared_key=keys["preshared_key"], address=address, name=service_name, department=department)
         logging.warning(f"Adding service {service_name} to the database")
         db.create_service(service)
     except Exception as e:
@@ -486,11 +480,8 @@ def create_service(service_name:str, department:str, subnet:str, _: Annotated[st
                 "peer", service.public_key, "remove"
             ], check=True)
 
-        subprocess.run([
-            "wg", "set", WG_INTERFACE,
-            "peer", service.public_key,
-            "allowed-ips", ""
-        ], check=True)
+        apply_to_wg_config(service, "")
+
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Failed to add peer: {e}")
         
@@ -498,10 +489,11 @@ def create_service(service_name:str, department:str, subnet:str, _: Annotated[st
 [Interface]
 PrivateKey = {keys["private_key"]}
 Address = {service.address}
-DNS = ""
+MTU = {MTU}
 
 [Peer]
 PublicKey = {service.public_key}
+PresharedKey = {service.preshared_key}
 Endpoint = {ENDPOINT}
 AllowedIPs = {WIREGUARD_SUBNET}
 PersistentKeepalive = 25
@@ -527,12 +519,14 @@ def delete_service(service_name: str, _: Annotated[str, Depends(verify_token)]):
             db.remove_user_service_link(peer, service)
             active_subnets = db.get_peers_subnets(peer)
             active_services = db.get_peers_services(peer)
-            allowed_ips = ','.join(subnet.subnet for subnet in active_subnets) + ',' + ','.join(service.address for service in active_services)
-            subprocess.run([
-                "wg", "set", WG_INTERFACE,
-                "peer", peer.public_key,
-                "allowed-ips", allowed_ips
-            ], check=True)
+            allowed_ips = ','.join(
+            filter(None, [
+                ','.join(subnet.subnet for subnet in active_subnets),
+                ','.join(service.address for service in active_services)
+                ])
+            )
+            apply_to_wg_config(peer, allowed_ips)
+
         db.delete_service(service)
         
     except subprocess.CalledProcessError as e:

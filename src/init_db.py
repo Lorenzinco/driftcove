@@ -10,6 +10,7 @@ def init_db(db_path):
     cursor = conn.cursor()
     WIREGUARD_SUBNET = os.getenv("WIREGUARD_SUBNET","10.128.0.0/9")
     PUBLIC_KEY = os.getenv("PUBLIC_KEY", "default_public_key")
+    PRESHARED_KEY = os.getenv("PRESHARED_KEY", "X2RHVZ+j12IDqxq8HaKOp77+MRprFo7XxO8LrE9BhxE=")
     net = ipaddress.ip_network(WIREGUARD_SUBNET, strict=False)
 
     # pick the first usable IP address in the subnet
@@ -22,7 +23,8 @@ def init_db(db_path):
         username TEXT NOT NULL UNIQUE,
         address TEXT NOT NULL UNIQUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        public_key TEXT NOT NULL UNIQUE
+        public_key TEXT NOT NULL UNIQUE,
+        preshared_key TEXT
     )""")
 
     cursor.execute("""            
@@ -68,9 +70,9 @@ def init_db(db_path):
     VALUES (?, ?, ?)
     """, (WIREGUARD_SUBNET, "Wireguard Subnet", "This is the subnet for the WireGuard configuration."))
     cursor.execute("""
-    INSERT OR IGNORE INTO users (username, address, public_key)
-    VALUES (?, ?, ?)
-    """, ("master", first_ip, PUBLIC_KEY))
+    INSERT OR IGNORE INTO users (username, address, public_key, preshared_key)
+    VALUES (?, ?, ?, ?)
+    """, ("master", first_ip, PUBLIC_KEY, PRESHARED_KEY))
 
     cursor.execute("""
                    INSERT OR IGNORE INTO user_subnets (user_id, subnet)
