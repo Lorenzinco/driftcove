@@ -24,7 +24,7 @@ EOF
 fi
 
 echo "Starting WireGuard..."
-export PUBLIC_KEY=$(cat /etc/wireguard/publickey)
+export WIREGUARD_PUBLIC_KEY=$(cat /etc/wireguard/publickey)
 wg-quick up wg0
 chmod u+rw /etc/wireguard/wg0.conf
 echo "Wireguard is up, starting the backend..."
