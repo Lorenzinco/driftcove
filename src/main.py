@@ -129,9 +129,7 @@ async def lifespan(app: FastAPI):
 
         logging.info("Every non-allowed traffic will be dropped")
         subprocess.run([
-            "iptables", "-A", "FORWARD",
-            "-i", WG_INTERFACE,
-            "-j", "DROP"
+            "iptables", "-P", "FORWARD", "DROP"
         ], check=True)
 
         logging.info(f"Loaded {len(subnets)} subnets and {sum(len(db.get_peers_in_subnet(subnet)) for subnet in subnets)} peers from the database.")
