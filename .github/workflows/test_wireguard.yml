@@ -1,0 +1,45 @@
+name: Test WireGuard Setup
+
+on: [push, pull_request]
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the image
+        run: docker build -t driftcove-test .
+
+      - name: Start the container
+        run: |
+          docker run -d --name driftcove \
+            --cap-add=NET_ADMIN \
+            --sysctl net.ipv4.ip_forward=1 \
+            -p 51820:51820 -p 8000:8000 \
+            -e WIREGUARD_API_BACKEND_PORT=8000 \
+            -e WIREGUARD_UDP_PORT=51820 \
+            driftcove-test
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install test dependencies
+        run: pip install -r tests/requirements.txt
+
+      - name: Wait for FastAPI to be ready
+        run: |
+          until curl -s http://localhost:8000/status; do
+            echo "Waiting for server..."
+            sleep 2
+          done
+
+      
+      - name: Run test
+        run: python tests/test.py
