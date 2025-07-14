@@ -46,7 +46,7 @@ def test_remove_peer(username="testuser"):
 
 def test_peer_get_info(username="testuser"):
     print(f"\033[94mGetting info for peer {username}...\033[0m")
-    r = requests.get(f"{BASE_URL}/peer/get_info", params={"username": username}, headers=HEADERS)
+    r = requests.get(f"{BASE_URL}/peer/info", params={"username": username}, headers=HEADERS)
     print(r.status_code, r.json())
     if r.status_code == 200:
         print("\033[92mSuccessfully retrieved peer info\033[0m")
