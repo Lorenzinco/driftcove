@@ -1,5 +1,6 @@
 from fastapi import HTTPException,Header
 from pydantic_settings import BaseSettings
+import os
 
 class Settings(BaseSettings):
     db_path: str = "/home/db/driftcove.db"
@@ -18,7 +19,20 @@ try:
 except FileNotFoundError:
     public_key_value = ""
 
-settings = Settings(public_key=public_key_value)
+wg_udp_port = int(os.getenv("WG_UDP_PORT", 1194))
+wg_backend_tcp_port = int(os.getenv("WG_BACKEND_TCP_PORT", 8000))
+api_token = os.getenv("API_TOKEN", "supersecuretoken")
+endpoint = os.getenv("ENDPOINT", f"127.0.0.0:{wg_udp_port}")
+wg_default_subnet = os.getenv("WG_DEFAULT_SUBNET", "10.128.0.0/9")
+mtu = os.getenv("MTU", "1420")
+
+settings = Settings(public_key=public_key_value,
+                    wg_udp_port=wg_udp_port,
+                    wg_backend_tcp_port=wg_backend_tcp_port,
+                    api_token=api_token,
+                    endpoint=endpoint,
+                    wg_default_subnet=wg_default_subnet,
+                    mtu=mtu)
 
 tags_metadata = [
     {

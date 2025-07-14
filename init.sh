@@ -14,18 +14,17 @@ if [ ! -f "$WG_CONF" ]; then
     PRIVATE_KEY=$(cat /etc/wireguard/privatekey)
     cat > "$WG_CONF" <<EOF
 [Interface]
-Address = ${WIREGUARD_SUBNET:-10.8.0.0/24}
-ListenPort = $WIREGUARD_UDP_PORT
+Address = ${WG_DEFAULT_SUBNET:-10.128.0.0/9}
+ListenPort = $WG_UDP_PORT
 PrivateKey = $PRIVATE_KEY
-MTU = ${WIREGUARD_MTU:-1420}
-PostUp = iptables -t nat -A POSTROUTING -s ${WIREGUARD_SUBNET:-10.8.0.0/24} -o eth0 -j MASQUERADE
-PostDown = iptables -t nat -D POSTROUTING -s ${WIREGUARD_SUBNET:-10.8.0.0/24} -o eth0 -j MASQUERADE
+MTU = ${MTU:-1420}
+PostUp = iptables -t nat -A POSTROUTING -s ${WG_DEFAULT_SUBNET:-10.128.0.0/9} -o eth0 -j MASQUERADE
+PostDown = iptables -t nat -D POSTROUTING -s ${WG_DEFAULT_SUBNET:-10.128.0.0/9} -o eth0 -j MASQUERADE
 EOF
 fi
 
 echo "Starting WireGuard..."
-export WIREGUARD_PUBLIC_KEY=$(cat /etc/wireguard/publickey)
 wg-quick up wg0
 chmod u+rw /etc/wireguard/wg0.conf
 echo "Wireguard is up, starting the backend..."
-uvicorn app.main:app --host 0.0.0.0 --port $WIREGUARD_API_BACKEND_PORT --log-level debug
+uvicorn app.main:app --host 0.0.0.0 --port ${WG_BACKEND_TCP_PORT:-8000} --log-level debug

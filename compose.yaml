@@ -1,8 +1,13 @@
 services:
   driftcove:
     build: .
-    env_file:
-      - ./config.env
+    environment:
+      - wg_udp_port=1194
+      - wg_backend_tcp_port=8000
+      - api_token="supersecuretoken"
+      - endpoint="127.0.0.0"
+      - wg_default_subnet="10.128.0.0/9"
+      - mtu="1420"
     container_name: driftcove
     cap_add:
       - NET_ADMIN
