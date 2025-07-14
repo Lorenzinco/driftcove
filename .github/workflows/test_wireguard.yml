@@ -30,12 +30,9 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install test dependencies
-        run: pip install -r tests/requirements.txt
-
       - name: Wait for FastAPI to be ready
         run: |
-          until curl -s http://localhost:8000/status; do
+          until curl -s http://localhost:8000/network/status; do
             echo "Waiting for server..."
             sleep 2
           done

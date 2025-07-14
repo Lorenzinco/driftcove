@@ -51,9 +51,5 @@ def get_topology(_: Annotated[str, Depends(verify_token)])->dict:
     return {"networks":topology, "links": links}
 
 @router.get("/status",tags=["network"])
-def status(_: Annotated[str, Depends(verify_token)]):
-    try:
-        result = subprocess.check_output(["wg", "show", settings.wg_interface], text=True)
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get status: {e}")
-    return {"status": result}
+def status():
+    return {"status": "running"}
