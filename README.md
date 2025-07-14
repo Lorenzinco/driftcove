@@ -1,10 +1,11 @@
 # Driftcove
 
-![GitHub License](https://img.shields.io/github/license/lorenzinco/driftcove?style=for-the-badge&link=https%3A%2F%2Fgithub.com%2FLorenzinco%2Fdriftcove%3Ftab%3DMIT) ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/lorenzinco/driftcove/test_wireguard.yml?style=for-the-badge)
-
 A docker image used to create and customize a vpn server
 
 ![Driftcove Logo](https://raw.githubusercontent.com/lorenzinco/driftcove/main/assets/driftcove.png)
+![GitHub License](https://img.shields.io/github/license/lorenzinco/driftcove?style=for-the-badge&link=https%3A%2F%2Fgithub.com%2FLorenzinco%2Fdriftcove%3Ftab%3DMIT) ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/lorenzinco/driftcove/test_wireguard.yml?style=for-the-badge)
+
+
 
 ## Features
 
