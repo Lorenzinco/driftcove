@@ -7,7 +7,7 @@ import logging, subprocess
 router = APIRouter(tags=["network"])
 
 
-@router.get("/get_all",tags=["network"])
+@router.get("/subnets",tags=["network"])
 def get_subnets(_: Annotated[str, Depends(verify_token)]):
     """
     Get all subnets.
@@ -21,7 +21,7 @@ def get_subnets(_: Annotated[str, Depends(verify_token)]):
         raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
 
     
-@router.get("/get_topology",tags=["network"])
+@router.get("/topology",tags=["network"])
 def get_topology(_: Annotated[str, Depends(verify_token)])->dict:
     """
     Get the current network topology

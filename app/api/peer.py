@@ -17,6 +17,8 @@ def create_peer(username:str , subnet:str, _: Annotated[str, Depends(verify_toke
     If you wish for selected peers to be able to connect to the peer, you need to use the connect endpoint.
     """
     keys = generate_keys()
+    # start a transaction here
+
     old_peer = db.get_peer_by_username(username)
     logging.warning(f"Creating peer {username} with public key {keys['public_key']}")
     logging.warning(f"Old peer: {old_peer}, if none, it will be created anew")
@@ -56,6 +58,8 @@ def create_peer(username:str , subnet:str, _: Annotated[str, Depends(verify_toke
         raise HTTPException(status_code=500, detail=f"Failed to add peer: {e}")
         
     configuration = generate_wg_config(peer, keys["private_key"])
+    
+    # close the transaction 
     return {"configuration": configuration}
 
 @router.get("/get_info",tags=["peer"])

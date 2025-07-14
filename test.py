@@ -15,7 +15,7 @@ def test_create_subnet():
 
 def test_delete_subnet(subnet="10.42.0.0/24"):
     print(f"\033[94mDeleting subnet {subnet}...\033[0m")
-    r = requests.delete(f"{BASE_URL}/subnet/delete", params={"subnet": subnet}, headers=HEADERS)
+    r = requests.delete(f"{BASE_URL}/subnet/", params={"subnet": subnet}, headers=HEADERS)
     print(r.status_code, r.text)
     if r.status_code == 200:
         print("\033[92mSuccessfully deleted subnet\033[0m")
@@ -54,26 +54,26 @@ def test_peer_get_info(username="testuser"):
         print(f"\033[91mFailed to retrieve peer info {r.status_code}: {r.text}\033[0m")
     return r.json()
 
-def test_add_peer_to_subnet(username="testuser", subnet = "10.42.0.0/24"):
-    print("\033[94mAdding peer to subnet...\033[0m")
-    r = requests.post(f"{BASE_URL}/subnet/add_peer", params={"username": username, "subnet": subnet}, headers=HEADERS)
+def test_connect_peer_to_subnet(username="testuser", subnet = "10.42.0.0/24"):
+    print("\033[94mConnecting peer to subnet...\033[0m")
+    r = requests.post(f"{BASE_URL}/subnet/connect", params={"username": username, "subnet": subnet}, headers=HEADERS)
     if r.status_code == 200:
-        print("\033[92mSuccessfully added peer to subnet\033[0m")
+        print("\033[92mSuccessfully connected peer to subnet\033[0m")
     else:
-        print(f"\033[91mFailed to add peer to subnet {r.status_code}: {r.text}\033[0m")
+        print(f"\033[91mFailed to connect peer to subnet {r.status_code}: {r.text}\033[0m")
 
-def test_subnet_remove_peer(username="testuser", address= "10.42.0.0/24"):
-    print(f"\033[94mRemoving peer {username} from subnet {address}...\033[0m")
-    r = requests.delete(f"{BASE_URL}/subnet/remove_peer", params={"username": username, "subnet": address}, headers=HEADERS)
+def test_disconnect_peer_from_subnet(username="testuser", address= "10.42.0.0/24"):
+    print(f"\033[94mDisconnecting peer {username} from subnet {address}...\033[0m")
+    r = requests.delete(f"{BASE_URL}/subnet/disconnect", params={"username": username, "subnet": address}, headers=HEADERS)
     print(r.status_code, r.text)
     if r.status_code == 200:
-        print("\033[92mSuccessfully removed peer from subnet\033[0m")
+        print("\033[92mSuccessfully disconnected peer from subnet\033[0m")
     else:
-        print(f"\033[91mFailed to remove peer from subnet {r.status_code}: {r.text}\033[0m")
+        print(f"\033[91mFailed to disconnect peer from subnet {r.status_code}: {r.text}\033[0m")
 
 def test_get_topology():
     print("\033[94mGetting topology...\033[0m")
-    r = requests.get(f"{BASE_URL}/network/get_topology", headers=HEADERS)
+    r = requests.get(f"{BASE_URL}/network/topology", headers=HEADERS)
     print(r.status_code, r.json())
     if r.status_code == 200:
         print("\033[92mSuccessfully retrieved topology\033[0m")
@@ -82,7 +82,7 @@ def test_get_topology():
 
 def test_get_subnets():
     print("\033[94mGetting subnets...\033[0m")
-    r = requests.get(f"{BASE_URL}/network/get_all", headers=HEADERS)
+    r = requests.get(f"{BASE_URL}/network/subnets", headers=HEADERS)
     print(r.json())
     if r.status_code == 200:
         print("\033[92mSuccessfully retrieved subnets\033[0m")
@@ -163,7 +163,7 @@ if __name__ == "__main__":
     test_get_subnets()
     test_create_peer()
     test_peer_get_info()
-    test_add_peer_to_subnet()
+    test_connect_peer_to_subnet()
     test_get_topology()
     test_create_service()
     test_connect_service()
@@ -171,7 +171,7 @@ if __name__ == "__main__":
     test_disconnect_service()
     test_get_topology()
     test_delete_service()
-    test_subnet_remove_peer()
+    test_disconnect_peer_from_subnet()
     test_remove_peer()
     test_delete_subnet()
     test_get_topology()

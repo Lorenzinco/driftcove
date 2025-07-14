@@ -31,6 +31,12 @@ async def lifespan(app: FastAPI):
                 logging.info(f"Adding route for peer {peer.username} in subnet {subnet.subnet}")
                 allow_link(peer.address, subnet.subnet)
 
+        logging.info("Loading from db peer to peer links")
+        links = db.get_links_between_peers()
+        for link in links:
+            allow_link(link[0],link[1])
+            allow_link(link[1],link[0])
+
         logging.info("Every non-allowed traffic will be dropped")
         default_policy_drop()
 

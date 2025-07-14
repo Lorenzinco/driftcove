@@ -23,9 +23,9 @@ def create_subnet(subnet: Subnet, _: Annotated[str, Depends(verify_token)]):
  
     return {"message": "Subnet created"}
 
-@router.post("/add_peer",tags=["subnet"])
-def add_peer_to_subnet(username: str, subnet: str, _: Annotated[str, Depends(verify_token)]):
-    """ Add a peer named to a specific subnet.
+@router.post("/connect",tags=["subnet"])
+def connect_peer_to_subnet(username: str, subnet: str, _: Annotated[str, Depends(verify_token)]):
+    """ Connects a peer named username to a specific subnet if both exist.
     """
     try:
         peer = db.get_peer_by_username(username)
@@ -44,10 +44,10 @@ def add_peer_to_subnet(username: str, subnet: str, _: Annotated[str, Depends(ver
     
     return {"message": "Peer added to subnet"}
 
-@router.delete("/delete",tags=["subnet"])
+@router.delete("/",tags=["subnet"])
 def delete_subnet(subnet: str, _: Annotated[str, Depends(verify_token)]):
     """
-    Delete a subnet.
+    Deletes a subnet.
     This endpoint will delete a subnet from the database, all the peers who had this subnet on their allowed ips will get it removed.
     """
     try:
@@ -64,10 +64,10 @@ def delete_subnet(subnet: str, _: Annotated[str, Depends(verify_token)]):
     return {"message": "Subnet deleted"}
 
 
-@router.delete("/remove_peer",tags=["subnet"])
-def remove_peer_from_subnet(username: str, subnet: str, _: Annotated[str, Depends(verify_token)]):
+@router.delete("/disconnect",tags=["subnet"])
+def disconnect_peer_from_subnet(username: str, subnet: str, _: Annotated[str, Depends(verify_token)]):
     """
-        Remove a peer from a specific subnet.
+        Removes a peer from a specific subnet, if both exist. 
     """
     try:
         peer = db.get_peer_by_username(username)
