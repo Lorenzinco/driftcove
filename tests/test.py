@@ -1,6 +1,6 @@
 import requests
 
-BASE_URL = "http://joker-gr.myfritz.link:51821"
+BASE_URL = "http://localhost:8000"
 HEADERS = {"Authorization": "Bearer supersecuretoken"}
 
 def test_create_subnet(subnet:str ="10.42.0.0/24"):
