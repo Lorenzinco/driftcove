@@ -8,6 +8,39 @@ class Database:
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.cursor = self.conn.cursor()
 
+    def begin_transaction(self):
+        """
+        This function initiates a transaction, which is used to ensure that the database operations are atomic.
+        It will raise an error if the database operation fails.
+        """
+        try:
+            self.conn.execute("BEGIN")
+        except sqlite3.Error as e:
+            print(f"An error occurred: {e}")
+            raise
+
+    def commit_transaction(self):
+        """
+        This function commits the transaction, which is used to ensure that the database operations are atomic.
+        It will raise an error if the database operation fails.
+        """
+        try:
+            self.conn.commit()
+        except sqlite3.Error as e:
+            print(f"An error occurred: {e}")
+            raise
+    
+    def rollback_transaction(self):
+        """
+        This function rolls back the transaction, which is used to ensure that the database operations are atomic.
+        It will raise an error if the database operation fails.
+        """
+        try:
+            self.conn.rollback()
+        except sqlite3.Error as e:
+            print(f"An error occurred: {e}")
+            raise
+
     def create_peer(self,peer:Peer):
         """
         It creates a peer inside the database.
@@ -18,7 +51,6 @@ class Database:
                 INSERT INTO peers (username, public_key, preshared_key, address)
                 VALUES (?, ?, ?, ?)
             """, (peer.username, peer.public_key, peer.preshared_key, peer.address))
-            self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
 
@@ -34,10 +66,26 @@ class Database:
             self.cursor.execute("""
                 DELETE FROM peers WHERE public_key = ?
             """, (peer.public_key,))
-            self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
         return
+    
+    def get_all_peers(self) -> list[Peer]:
+        """
+        Returns a list of all peers in the database.
+        """
+        peers = []
+        try:
+            self.cursor.execute("""
+                SELECT username, public_key, preshared_key, address
+                FROM peers
+            """)
+            peers_rows = self.cursor.fetchall()
+            for row in peers_rows:
+                peers.append(Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3]))
+        except sqlite3.Error as e:
+            print(f"An error occurred: {e}")
+        return peers
     
     def get_avaliable_ip(self, subnet: Subnet) -> str|None:
         """
@@ -88,7 +136,6 @@ class Database:
                 INSERT INTO subnets (name, subnet, description)
                 VALUES (?, ?, ?)
             """, (subnet.name,subnet.subnet,subnet.description))
-            self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error has occurred: {e}")
         return
@@ -101,7 +148,6 @@ class Database:
             self.cursor.execute("""
                 DELETE FROM subnets WHERE subnet = ?
             """, (subnet.subnet,))
-            self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error has occurred: {e}")
         return
@@ -177,7 +223,6 @@ class Database:
                 VALUES ((SELECT id FROM peers WHERE public_key = ?), ?)
                 ON CONFLICT(peer_id, subnet) DO NOTHING
             """, (peer.public_key, subnet.subnet))
-            self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
         return
@@ -191,7 +236,6 @@ class Database:
             self.cursor.execute("""
                 DELETE FROM peers_subnets WHERE peer_id = (SELECT id FROM peers WHERE public_key = ?) AND subnet = ?
             """, (peer.public_key, subnet.subnet))
-            self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
         return
@@ -254,11 +298,9 @@ class Database:
                 VALUES (?, ?, ?)
             """, (peer_id, service.name, service.department))
 
-            self.conn.commit()
             return peer_id
 
         except Exception as e:
-            self.conn.rollback()
             raise Exception(f"Failed to create service peer: {e}")
         
     def add_peer_service_link(self, peer: Peer, service: Service):
@@ -272,7 +314,6 @@ class Database:
                 VALUES ((SELECT id FROM peers WHERE public_key = ?), (SELECT id FROM services WHERE name = ?))
                 ON CONFLICT(peer_id, service_id) DO NOTHING
             """, (peer.public_key, service.name))
-            self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
 
@@ -285,7 +326,6 @@ class Database:
             self.cursor.execute("""
                 DELETE FROM peers_services WHERE peer_id = (SELECT id FROM peers WHERE public_key = ?) AND service_id = (SELECT id FROM services WHERE name = ?)
             """, (peer.public_key, service.name))
-            self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
         
@@ -298,7 +338,6 @@ class Database:
             self.cursor.execute("""
                 DELETE FROM peers WHERE public_key = ?
             """, (service.public_key,))
-            self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
 
@@ -395,7 +434,6 @@ class Database:
                 INSERT INTO peers_peers (peer_one_id, peer_two_id)
                 VALUES ((SELECT id FROM peers WHERE public_key = ?), (SELECT id FROM peers WHERE public_key = ?))
             """, (peer1.public_key, peer2.public_key))
-            self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
 
@@ -408,7 +446,6 @@ class Database:
             self.cursor.execute("""
                 DELETE FROM peers_peers WHERE peer_one_id = (SELECT id FROM peers WHERE public_key = ?) AND peer_two_id = (SELECT id FROM peers WHERE public_key = ?)
             """, (peer1.public_key, peer2.public_key))
-            self.conn.commit()
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
 
