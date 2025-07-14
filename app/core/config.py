@@ -22,7 +22,8 @@ except FileNotFoundError:
 wg_udp_port = int(os.getenv("WG_UDP_PORT", 1194))
 wg_backend_tcp_port = int(os.getenv("WG_BACKEND_TCP_PORT", 8000))
 api_token = os.getenv("API_TOKEN", "supersecuretoken")
-endpoint = os.getenv("ENDPOINT", f"127.0.0.0:{wg_udp_port}")
+endpoint = os.getenv("ENDPOINT", f"127.0.0.0")
+endpoint = f"{endpoint}:{wg_udp_port}"
 wg_default_subnet = os.getenv("WG_DEFAULT_SUBNET", "10.128.0.0/9")
 mtu = os.getenv("MTU", "1420")
 

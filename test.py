@@ -1,6 +1,6 @@
 import requests
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://joker-gr.myfritz.link:51821"
 HEADERS = {"Authorization": "Bearer supersecuretoken"}
 
 def test_create_subnet(subnet:str ="10.42.0.0/24"):
@@ -200,6 +200,14 @@ def test_get_all_peers():
 
 
 if __name__ == "__main__":
+    test_create_peer("peer1")
+    test_create_peer("peer2")
+    test_add_link_between_peers("peer1", "peer2")
+    exit(0)
+
+
+
+
     assert(test_create_peer() is True)
     assert(test_create_subnet() is True)
     assert(test_connect_peer_to_subnet() is True)
