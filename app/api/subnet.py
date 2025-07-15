@@ -40,7 +40,7 @@ def connect_peer_to_subnet(username: str, subnet: str, _: Annotated[str, Depends
             if subnet is None:
                 raise HTTPException(status_code=404, detail="Subnet not found")
 
-            db.add_peer_to_subnet(peer, subnet)
+            db.add_link_from_peer_to_subnet(peer, subnet)
             logging.info(f"Adding peer {peer.username} to subnet {subnet.subnet}")
             allow_link(peer.address, subnet.subnet)
 
@@ -48,7 +48,7 @@ def connect_peer_to_subnet(username: str, subnet: str, _: Annotated[str, Depends
             state_manager.restore()
             raise HTTPException(status_code=500, detail=f"Connecting peer {username} to subnet {subnet} failed: {e}")
     
-    return {"message": "Peer added to subnet"}
+    return {"message": "Peer connected to subnet"}
 
 @router.delete("/",tags=["subnet"])
 def delete_subnet(subnet: str, _: Annotated[str, Depends(verify_token)]):
@@ -63,7 +63,7 @@ def delete_subnet(subnet: str, _: Annotated[str, Depends(verify_token)]):
                 raise HTTPException(status_code=404, detail="Subnet not found")
             peers = db.get_peers_in_subnet(subnet_obj)
             for peer in peers:
-                db.remove_peer_from_subnet(peer, subnet_obj)
+                db.remove_link_from_peer_from_subnet(peer, subnet_obj)
                 remove_link(peer.address, subnet)
             db.delete_subnet(subnet_obj)
         except Exception as e:
@@ -87,10 +87,10 @@ def disconnect_peer_from_subnet(username: str, subnet: str, _: Annotated[str, De
             if subnet is None:
                 raise HTTPException(status_code=404, detail="Subnet not found")
             
-            db.remove_peer_from_subnet(peer, subnet)
+            db.remove_link_from_peer_from_subnet(peer, subnet)
             remove_link(peer.address, subnet.subnet)
 
         except Exception as e:
             state_manager.restore()
             raise HTTPException(status_code=500, detail=f"Disconnection of peer {username} from subnet {subnet} failed: {e}")
-    return {"message": "Peer removed from subnet"}
+    return {"message": "Peer disconnected from subnet"}

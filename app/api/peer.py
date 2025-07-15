@@ -90,13 +90,14 @@ def delete_peer(username: str, _: Annotated[str, Depends(verify_token)]):
             peer = db.get_peer_by_username(username)
             if peer is None:
                 raise HTTPException(status_code=404, detail="Peer not found")
-            peer_subnets = db.get_peers_subnets(peer)
-            peer_services = db.get_peers_services(peer)
+            peer_subnets = db.get_peers_links_to_subnets(peer)
+            peer_services = db.get_peer_services(peer)
             for subnet in peer_subnets:
                 remove_link(peer.address, subnet.subnet)
             for service in peer_services:
                 remove_link(peer.address, service.address)
             remove_from_wg_config(peer)
+            db.remove_peer(peer)
         except Exception as e:
             state_manager.restore()
             raise HTTPException(status_code=500, detail=f"Failed to delete peer {username}: {e}")
@@ -107,19 +108,19 @@ def delete_peer(username: str, _: Annotated[str, Depends(verify_token)]):
 @router.get("/subnets",tags=["peer"])
 def get_user_subnets(username: str, _: Annotated[str, Depends(verify_token)]):
     """
-    Get all subnets that a peer is part of.
+    Get the subnet the peer is part of as well as the subnets towards which the peer has a link to.
     This endpoint will return all the subnets that a peer is part of.
     """
-    subnets = []
     with lock.read_lock():
         try:
             peer = db.get_peer_by_username(username)
             if peer is None:
                 raise HTTPException(status_code=404, detail="Peer not found")
-            subnets = db.get_peers_subnets(peer)
+            subnet = db.get_peers_subnet(peer)
+            subnet_links = db.get_peers_links_to_subnets(peer)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
-    return {"subnets": subnets}
+    return {"subnet": subnet, "links": subnet_links}
     
 @router.post("/connect",tags=["peer"])
 def connect_two_peers(peer1_username:str, peer2_username:str, _: Annotated[str, Depends(verify_token)]):

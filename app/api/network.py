@@ -20,7 +20,7 @@ def get_subnets(_: Annotated[str, Depends(verify_token)]):
         logging.info(f"Retrieved {len(subnets)} subnets from the database.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
-    return {"subnets": subnets}
+    return {subnets}
 
     
 @router.get("/topology",tags=["network"])
@@ -35,7 +35,11 @@ def get_topology(_: Annotated[str, Depends(verify_token)])->dict:
             subnets = db.get_subnets()
             for subnet in subnets:
                 peers = db.get_peers_in_subnet(subnet)
+                services = db.get_services_in_subnet(subnet)
                 topology.append({subnet.subnet:peers})
+                peers_linked = db.get_peers_linked_to_subnet(subnet)
+                for peer in peers_linked:
+                    links.append({subnet.subnet:peer})
             services = db.get_all_services()
             for service in services:
                 peers = db.get_service_peers(service)

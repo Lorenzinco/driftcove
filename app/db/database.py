@@ -212,7 +212,7 @@ class Database:
             return None
     
 
-    def add_peer_to_subnet(self, peer: Peer, subnet: Subnet):
+    def add_link_from_peer_to_subnet(self, peer: Peer, subnet: Subnet):
         """
         This function adds a peer to a subnet.
         It will create the entry in the peer_subnets table, which is a many-to-many relationship between peers and subnets.
@@ -227,7 +227,7 @@ class Database:
             print(f"An error occurred: {e}")
         return
     
-    def remove_peer_from_subnet(self, peer: Peer, subnet: Subnet):
+    def remove_link_from_peer_from_subnet(self, peer: Peer, subnet: Subnet):
         """
         This function removes a peer from a subnet.
         It will delete the entry in the peer_subnets table.
@@ -240,7 +240,22 @@ class Database:
             print(f"An error occurred: {e}")
         return
     
-    def get_peers_subnets(self,peer:Peer)->list[Subnet]:
+    def get_peers_subnet(self,peer:Peer)->Subnet|None:
+        """
+        This function returns a subnet that a peer is part of.
+        It will return a Subnet object.
+        """
+        try:
+            subnets = self.get_subnets()
+            for subnet in subnets:
+                peer_ip_address = ipaddress.ip_address(peer.address)
+                if peer_ip_address in ipaddress.ip_network(subnet.subnet, strict=False):
+                    return subnet
+        except sqlite3.Error as e:
+            print(f"An error occurred: {e}")
+        return None
+    
+    def get_peers_links_to_subnets(self,peer:Peer)->list[Subnet]:
         """
         This function returns a list of subnets that a peer is part of.
         It will return a list of Subnet objects.
@@ -264,6 +279,51 @@ class Database:
     def get_peers_in_subnet(self, subnet: Subnet) -> list[Peer]:
         """
         This function returns a list of peers in a subnet.
+        It will return a list of Peer objects.
+        """
+        peers = []
+        try:
+            self.cursor.execute("""
+                SELECT p.username, p.public_key, p.preshared_key, p.address
+                FROM peers p
+                LEFT JOIN services s ON p.id = s.id
+                WHERE s.id IS NULL
+            """)
+            peers_rows = self.cursor.fetchall()
+            for row in peers_rows:
+                address = row[3]
+                address_ip = ipaddress.ip_address(address)
+                if address_ip in ipaddress.ip_network(subnet.subnet, strict=False):
+                    peers.append(Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3]))
+        except sqlite3.Error as e:
+            print(f"An error occurred: {e}")
+        return peers
+    
+    def get_services_in_subnet(self, subnet: Subnet) -> list[Service]:
+        """
+        This function returns a list of services in a subnet.
+        It will return a list of Service objects.
+        """
+        services = []
+        try:
+            self.cursor.execute("""
+                SELECT p.username, p.public_key, p.preshared_key, p.address, s.name, s.department
+                FROM peers p
+                JOIN services s ON p.id = s.id
+            """)
+            services_rows = self.cursor.fetchall()
+            for row in services_rows:
+                address = row[3]
+                address_ip = ipaddress.ip_address(address)
+                if address_ip in ipaddress.ip_network(subnet.subnet, strict=False):
+                    services.append(Service(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], name=row[4], department=row[5]))
+        except sqlite3.Error as e:
+            print(f"An error occurred: {e}")
+        return services
+    
+    def get_peers_linked_to_subnet(self, subnet: Subnet) -> list[Peer]:
+        """
+        This function returns a list of peers that are linked to a subnet.
         It will return a list of Peer objects.
         """
         peers = []
@@ -341,9 +401,9 @@ class Database:
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
 
-    def get_peers_services(self, peer: Peer) -> list[Service]:
+    def get_peers_services_links(self, peer: Peer) -> list[Service]:
         """
-        This function returns a list of services that a user is part of.
+        This function returns a list of services that a user is connected to.
         It will return a list of Service objects.
         """
         services = []
@@ -423,6 +483,27 @@ class Database:
         except sqlite3.Error as e:
             print(f"An error occurred: {e}")
         return peers
+    
+    def get_peer_services(self, peer: Peer) -> list[Service]:
+        """
+        This function returns a list of services that a peer is linked to.
+        It will return a list of Service objects.
+        """
+        services = []
+        try:
+            self.cursor.execute("""
+                SELECT s.name, s.department, p.public_key, p.preshared_key, p.address
+                FROM services s
+                JOIN peers_services ps ON s.id = ps.service_id
+                JOIN peers p ON ps.peer_id = p.id
+                WHERE p.public_key = ?
+            """, (peer.public_key,))
+            services_rows = self.cursor.fetchall()
+            for row in services_rows:
+                services.append(Service(username=peer.username, public_key=row[2], preshared_key=row[3], address=row[4], name=row[0], department=row[1]))
+        except sqlite3.Error as e:
+            print(f"An error occurred: {e}")
+        return services
     
     def add_link_between_two_peers(self, peer1: Peer, peer2: Peer):
         """
