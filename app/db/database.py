@@ -1,5 +1,6 @@
-import ipaddress, sqlite3, logging
+import ipaddress, sqlite3
 from app.core.models import Peer, Subnet, Service
+from app.core.logger import logging
 
 
 class Database:
@@ -16,8 +17,7 @@ class Database:
         try:
             self.conn.execute("BEGIN")
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
-            raise
+            raise Exception(f"An error occurred while starting transaction: {e}")
 
     def commit_transaction(self):
         """
@@ -27,9 +27,8 @@ class Database:
         try:
             self.conn.commit()
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
-            raise
-    
+            raise Exception(f"An error occurred while committing transaction: {e}")
+
     def rollback_transaction(self):
         """
         This function rolls back the transaction, which is used to ensure that the database operations are atomic.
@@ -38,8 +37,7 @@ class Database:
         try:
             self.conn.rollback()
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
-            raise
+            raise Exception(f"An error occurred while rolling back transaction: {e}")
 
     def create_peer(self,peer:Peer):
         """
@@ -52,7 +50,7 @@ class Database:
                 VALUES (?, ?, ?, ?)
             """, (peer.username, peer.public_key, peer.preshared_key, peer.address))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while creating peer: {e}")
 
         return
     
@@ -67,8 +65,7 @@ class Database:
                 DELETE FROM peers WHERE public_key = ?
             """, (peer.public_key,))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
-        return
+            raise Exception(f"An error occurred while removing peer: {e}")
     
     def get_all_peers(self) -> list[Peer]:
         """
@@ -84,7 +81,7 @@ class Database:
             for row in peers_rows:
                 peers.append(Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3]))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while getting all peers: {e}")
         return peers
     
     def get_avaliable_ip(self, subnet: Subnet) -> str|None:
@@ -105,7 +102,7 @@ class Database:
                     return str(ip)
             logging.warning(f"No available IPs found in subnet {subnet.subnet}")
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while getting available IP: {e}")
         return None
     
     def get_avaliable_username_for_service(self)->str|None:
@@ -124,7 +121,7 @@ class Database:
                     return username
             logging.warning("No available usernames found.")
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while getting available username: {e}")
         return None
     
     def create_subnet(self,subnet: Subnet):
@@ -137,9 +134,10 @@ class Database:
                 VALUES (?, ?, ?)
             """, (subnet.name,subnet.subnet,subnet.description))
         except sqlite3.Error as e:
-            print(f"An error has occurred: {e}")
+            raise Exception(f"An error occurred while creating subnet: {e}")
         return
-    
+        
+
     def delete_subnet(self, subnet: Subnet):
         """
         This function deletes a subnet from the database.
@@ -149,7 +147,7 @@ class Database:
                 DELETE FROM subnets WHERE subnet = ?
             """, (subnet.subnet,))
         except sqlite3.Error as e:
-            print(f"An error has occurred: {e}")
+            raise Exception(f"An error occurred while deleting subnet: {e}")
         return
     
     def get_peer_by_username(self, username: str) -> Peer:
@@ -165,12 +163,11 @@ class Database:
             row = self.cursor.fetchone()
             if row:
                 return Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3])
-            else:
-                return None
+            
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
-            return None
-    
+            raise Exception(f"An error occurred while getting peer by username: {e}")
+        return None
+
     def get_subnets(self)->list[Subnet]:
         """
         Returns a list of subnets inside the database.
@@ -183,13 +180,12 @@ class Database:
             """)
             subnets_rows = self.cursor.fetchall()
             # Use logging instead of print for Docker/container environments
-            logging.basicConfig(level=logging.INFO)
             logging.info(f"Found {len(subnets_rows)} subnets in the database.")
             logging.info(f"Subnets rows: {subnets_rows}")
             for row in subnets_rows:
                 subnets.append(Subnet(subnet=row[0],name=row[1],description=row[2]))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while getting all subnets: {e}")
         return subnets
     
     def get_subnet_by_address(self, address: str) -> Subnet|None:
@@ -205,11 +201,10 @@ class Database:
             row = self.cursor.fetchone()
             if row:
                 return Subnet(subnet=row[0], name=row[1], description=row[2])
-            else:
-                return None
+
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
-            return None
+            raise Exception(f"An error occurred while getting subnet by address: {e}")
+        return None
     
 
     def add_link_from_peer_to_subnet(self, peer: Peer, subnet: Subnet):
@@ -224,7 +219,7 @@ class Database:
                 ON CONFLICT(peer_id, subnet) DO NOTHING
             """, (peer.public_key, subnet.subnet))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while adding link from peer to subnet: {e}")
         return
     
     def remove_link_from_peer_from_subnet(self, peer: Peer, subnet: Subnet):
@@ -237,7 +232,7 @@ class Database:
                 DELETE FROM peers_subnets WHERE peer_id = (SELECT id FROM peers WHERE public_key = ?) AND subnet = ?
             """, (peer.public_key, subnet.subnet))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while removing link from peer to subnet: {e}")
         return
     
     def get_peers_subnet(self,peer:Peer)->Subnet|None:
@@ -252,7 +247,7 @@ class Database:
                 if peer_ip_address in ipaddress.ip_network(subnet.subnet, strict=False):
                     return subnet
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while getting peers subnet: {e}")
         return None
     
     def get_peers_links_to_subnets(self,peer:Peer)->list[Subnet]:
@@ -273,7 +268,7 @@ class Database:
             for row in subnets_rows:
                 subnets.append(Subnet(subnet=row[0], name=row[1], description=row[2]))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while getting peers subnets: {e}")
         return subnets
     
     def get_peers_in_subnet(self, subnet: Subnet) -> list[Peer]:
@@ -296,7 +291,7 @@ class Database:
                 if address_ip in ipaddress.ip_network(subnet.subnet, strict=False):
                     peers.append(Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3]))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while getting peers in subnet: {e}")
         return peers
     
     def get_services_in_subnet(self, subnet: Subnet) -> list[Service]:
@@ -318,7 +313,7 @@ class Database:
                 if address_ip in ipaddress.ip_network(subnet.subnet, strict=False):
                     services.append(Service(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], name=row[4], department=row[5]))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while getting services in subnet: {e}")
         return services
     
     def get_peers_linked_to_subnet(self, subnet: Subnet) -> list[Peer]:
@@ -338,7 +333,7 @@ class Database:
             for row in peers_rows:
                 peers.append(Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3]))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while getting peers linked to subnet: {e}")
         return peers
     
     def create_service(self, service: Service):
@@ -360,7 +355,7 @@ class Database:
 
             return peer_id
 
-        except Exception as e:
+        except sqlite3.Error as e:
             raise Exception(f"Failed to create service peer: {e}")
         
     def add_peer_service_link(self, peer: Peer, service: Service):
@@ -375,7 +370,7 @@ class Database:
                 ON CONFLICT(peer_id, service_id) DO NOTHING
             """, (peer.public_key, service.name))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while adding link from peer to service: {e}")
 
     def remove_peer_service_link(self, peer: Peer, service: Service):
         """
@@ -387,8 +382,8 @@ class Database:
                 DELETE FROM peers_services WHERE peer_id = (SELECT id FROM peers WHERE public_key = ?) AND service_id = (SELECT id FROM services WHERE name = ?)
             """, (peer.public_key, service.name))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
-        
+            raise Exception(f"An error occurred while removing link from peer to service: {e}")
+
     def delete_service(self, service: Service):
         """
         This function deletes a service from the database.
@@ -399,7 +394,7 @@ class Database:
                 DELETE FROM peers WHERE public_key = ?
             """, (service.public_key,))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while deleting service: {e}")
 
     def get_peers_services_links(self, peer: Peer) -> list[Service]:
         """
@@ -419,7 +414,7 @@ class Database:
             for row in services_rows:
                 services.append(Service(username=peer.username, public_key=row[2], preshared_key=row[3], address=row[4], name=row[0], department=row[1]))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while getting peer's services: {e}")
         return services
         
         
@@ -439,7 +434,7 @@ class Database:
             for row in services_rows:
                 services.append(Service(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], name=row[4], department=row[5]))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while getting all services: {e}")
         return services
         
     def get_service_by_name(self, name: str) -> Service|None:
@@ -457,12 +452,11 @@ class Database:
             row = self.cursor.fetchone()
             if row:
                 return Service(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], name=row[4], department=row[5])
-            else:
-                return None
+            
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
-            return None
-        
+            raise Exception(f"An error occurred while getting service by name: {e}")
+        return None
+
     def get_service_peers(self, service: Service) -> list[Peer]:
         """
         This function returns a list of peers that are linked to a service.
@@ -481,7 +475,7 @@ class Database:
             for row in peers_rows:
                 peers.append(Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3]))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while getting peers linked to service: {e}")
         return peers
     
     def get_peer_services(self, peer: Peer) -> list[Service]:
@@ -502,7 +496,7 @@ class Database:
             for row in services_rows:
                 services.append(Service(username=peer.username, public_key=row[2], preshared_key=row[3], address=row[4], name=row[0], department=row[1]))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while getting peer's services: {e}")
         return services
     
     def add_link_between_two_peers(self, peer1: Peer, peer2: Peer):
@@ -516,7 +510,7 @@ class Database:
                 VALUES ((SELECT id FROM peers WHERE public_key = ?), (SELECT id FROM peers WHERE public_key = ?))
             """, (peer1.public_key, peer2.public_key))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while adding link between peers: {e}")
 
     def remove_link_between_two_peers(self, peer1: Peer, peer2: Peer):
         """
@@ -528,7 +522,7 @@ class Database:
                 DELETE FROM peers_peers WHERE peer_one_id = (SELECT id FROM peers WHERE public_key = ?) AND peer_two_id = (SELECT id FROM peers WHERE public_key = ?)
             """, (peer1.public_key, peer2.public_key))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while removing link between peers: {e}")
 
     def get_links_between_peers(self)->list[tuple[Peer, Peer]]:
         """
@@ -549,7 +543,7 @@ class Database:
                 peer2 = Peer(username=row[4], public_key=row[5], preshared_key=row[6], address=row[7])
                 links.append((peer1, peer2))
         except sqlite3.Error as e:
-            print(f"An error occurred: {e}")
+            raise Exception(f"An error occurred while getting links between peers: {e}")
         return links
 
 

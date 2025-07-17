@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
-from app.core.config import verify_token,settings
+from app.core.config import verify_token
 from app.core.lock import lock
 from app.core.database import db
+from app.core.logger import logging
 from typing import Annotated
-import logging, subprocess
 
 router = APIRouter(tags=["network"])
 

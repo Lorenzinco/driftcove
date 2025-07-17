@@ -1,12 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends
 from app.core.config import verify_token
 from app.core.database import db
-from app.core.models import state_manager
+from app.core.state_manager import state_manager
 from app.core.lock import lock
 from app.core.iptables import allow_link, remove_link
-from app.core.models import Subnet
+from app.core.models import Subnet, Peer
+from app.core.logger import logging
 from typing import Annotated
-import logging
 
 
 
@@ -22,7 +22,6 @@ def create_subnet(subnet: Subnet, _: Annotated[str, Depends(verify_token)]):
         try:
             db.create_subnet(subnet)
         except Exception as e:
-            state_manager.restore()
             raise HTTPException(status_code=500, detail=f"Subnet creation failed: {e}")
     
     return {"message": "Subnet created"}
@@ -33,10 +32,10 @@ def connect_peer_to_subnet(username: str, subnet: str, _: Annotated[str, Depends
     """
     with lock.write_lock(), state_manager.saved_state():
         try:
-            peer = db.get_peer_by_username(username)
+            peer: Peer = db.get_peer_by_username(username)
             if peer is None:
                 raise HTTPException(status_code=404, detail="Peer not found")
-            subnet = db.get_subnet_by_address(subnet)
+            subnet: Subnet = db.get_subnet_by_address(subnet)
             if subnet is None:
                 raise HTTPException(status_code=404, detail="Subnet not found")
 
@@ -45,7 +44,6 @@ def connect_peer_to_subnet(username: str, subnet: str, _: Annotated[str, Depends
             allow_link(peer.address, subnet.subnet)
 
         except Exception as e:
-            state_manager.restore()
             raise HTTPException(status_code=500, detail=f"Connecting peer {username} to subnet {subnet} failed: {e}")
     
     return {"message": "Peer connected to subnet"}
@@ -58,16 +56,15 @@ def delete_subnet(subnet: str, _: Annotated[str, Depends(verify_token)]):
     """
     with lock.write_lock(), state_manager.saved_state():
         try:
-            subnet_obj = db.get_subnet_by_address(subnet)
+            subnet_obj: Subnet = db.get_subnet_by_address(subnet)
             if subnet_obj is None:
                 raise HTTPException(status_code=404, detail="Subnet not found")
-            peers = db.get_peers_in_subnet(subnet_obj)
+            peers: list[Peer] = db.get_peers_in_subnet(subnet_obj)
             for peer in peers:
                 db.remove_link_from_peer_from_subnet(peer, subnet_obj)
                 remove_link(peer.address, subnet)
             db.delete_subnet(subnet_obj)
         except Exception as e:
-            state_manager.restore()
             raise HTTPException(status_code=500, detail=f"Deleting subnet {subnet} failed: {e}")
         
     return {"message": "Subnet deleted"}
@@ -80,10 +77,10 @@ def disconnect_peer_from_subnet(username: str, subnet: str, _: Annotated[str, De
     """
     with lock.write_lock(), state_manager.saved_state():
         try:
-            peer = db.get_peer_by_username(username)
+            peer: Peer = db.get_peer_by_username(username)
             if peer is None:
                 raise HTTPException(status_code=404, detail="Peer not found")
-            subnet = db.get_subnet_by_address(subnet)
+            subnet: Subnet = db.get_subnet_by_address(subnet)
             if subnet is None:
                 raise HTTPException(status_code=404, detail="Subnet not found")
             
@@ -91,6 +88,5 @@ def disconnect_peer_from_subnet(username: str, subnet: str, _: Annotated[str, De
             remove_link(peer.address, subnet.subnet)
 
         except Exception as e:
-            state_manager.restore()
             raise HTTPException(status_code=500, detail=f"Disconnection of peer {username} from subnet {subnet} failed: {e}")
     return {"message": "Peer disconnected from subnet"}

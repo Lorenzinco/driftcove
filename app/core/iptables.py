@@ -1,6 +1,7 @@
-import logging, subprocess
+import subprocess
 from fastapi import HTTPException
 from app.core.config import settings
+from app.core.logger import logging
 
 def allow_link(src:str,dst:str):
     """Allow a link via iptables."""

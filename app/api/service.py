@@ -2,12 +2,12 @@ from fastapi import APIRouter, HTTPException, Depends
 from app.core.wireguard import generate_keys, apply_to_wg_config, remove_from_wg_config, generate_wg_config
 from app.core.config import verify_token, settings
 from app.core.lock import lock
-from app.core.models import state_manager
+from app.core.state_manager import state_manager
 from app.core.database import db
 from app.core.iptables import allow_link, remove_link
 from app.core.models import Service
+from app.core.logger import logging
 from typing import Annotated
-import logging
 
 router = APIRouter(tags=["service"])
 
@@ -45,7 +45,6 @@ def create_service(service_name:str, department:str, subnet:str, _: Annotated[st
                 remove_from_wg_config(old_service)
             apply_to_wg_config(service)
         except Exception as e:
-            state_manager.restore()
             raise HTTPException(status_code=500, detail=f"Failed to create service: {e}")
             
     configuration = generate_wg_config(service, keys["private_key"])
@@ -73,7 +72,6 @@ def delete_service(service_name: str, _: Annotated[str, Depends(verify_token)]):
             db.delete_service(service)
 
         except Exception as e:
-            state_manager.restore()
             raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
     return {"message": "Service deleted"}
 
@@ -98,7 +96,6 @@ def service_connect(username: str, service_name: str, _: Annotated[str, Depends(
             allow_link(peer.address, service.address)
     
         except Exception as e:
-            state_manager.restore()
             raise HTTPException(status_code=500, detail=f"Connecting peer {username} to {service_name} failed: {e}")
     return {"message": f"Peer {username} connected to service {service.name}"}
 
@@ -123,7 +120,6 @@ def service_disconnect(username: str, service_name: str, _: Annotated[str, Depen
             db.remove_peer_service_link(peer, service)
     
         except Exception as e:
-            state_manager.restore()
             raise HTTPException(status_code=500, detail=f"Failed to disconnect {username} from {service_name}: {e}")
     return {"message": f"Peer {username} disconnected from service {service.name}"}
         
