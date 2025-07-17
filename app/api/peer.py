@@ -3,10 +3,11 @@ from app.core.config import verify_token, settings
 from app.core.lock import lock
 from app.core.database import db
 from app.core.iptables import allow_link, remove_link
-from app.core.models import Peer, state_manager
+from app.core.models import Peer
+from app.core.state_manager import state_manager
+from app.core.logger import logging
 from app.core.wireguard import apply_to_wg_config, generate_keys, generate_wg_config, remove_from_wg_config
 from typing import Annotated
-import logging, subprocess
 
 router = APIRouter(tags=["peer"])
 
@@ -33,7 +34,7 @@ def create_peer(username:str , subnet:str, _: Annotated[str, Depends(verify_toke
             if address is None:
                 raise HTTPException(status_code=500, detail="No available IPs in subnet")
             peer = Peer(username=username, public_key=keys["public_key"], preshared_key=keys["preshared_key"], address=address)
-            logging.warning(f"Adding peer {peer} to the database")
+            logging.info(f"Adding peer {peer} to the database")
             db.create_peer(peer)
             # if the peer already exists, we remove it first
             if old_peer is not None:
@@ -41,7 +42,6 @@ def create_peer(username:str , subnet:str, _: Annotated[str, Depends(verify_toke
 
             apply_to_wg_config(peer)
         except Exception as e:
-            state_manager.restore()
             raise HTTPException(status_code=500, detail=f"Database update failed: {e}")
             
     configuration = generate_wg_config(peer, keys["private_key"])
@@ -99,7 +99,6 @@ def delete_peer(username: str, _: Annotated[str, Depends(verify_token)]):
             remove_from_wg_config(peer)
             db.remove_peer(peer)
         except Exception as e:
-            state_manager.restore()
             raise HTTPException(status_code=500, detail=f"Failed to delete peer {username}: {e}")
     return {"message": "Peer removed"}
     
@@ -139,7 +138,6 @@ def connect_two_peers(peer1_username:str, peer2_username:str, _: Annotated[str, 
             allow_link(peer2_obj.address, peer1_obj.address)
             db.add_link_between_two_peers(peer1_obj, peer2_obj)
         except Exception as e:
-            state_manager.restore()
             raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
     return {"message": f"Peers {peer1_username} and {peer2_username} connected"}
         
@@ -159,6 +157,5 @@ def disconnect_two_peers(peer1_username:str, peer2_username:str, _: Annotated[st
             remove_link(peer2_obj.address, peer1_obj.address)
             db.remove_link_between_two_peers(peer1_obj, peer2_obj)
         except Exception as e:
-            state_manager.restore()
             raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
     return {"message": f"Peers {peer1_username} and {peer2_username} disconnected"}

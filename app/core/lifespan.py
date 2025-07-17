@@ -3,15 +3,13 @@ from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.core.database import db
 from app.core.iptables import allow_link, flush_iptables, default_policy_drop
-from app.core.models import Subnet
+from app.core.logger import logging
 from app.core.wireguard import apply_to_wg_config
 from app.db.init_db import init_db
-import logging
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # STARTUP CODE
-    logging.basicConfig(level=logging.INFO)
     logging.info("Starting Driftcove WireGuard API...")
     try:
         init_db(settings.db_path)

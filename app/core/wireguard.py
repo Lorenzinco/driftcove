@@ -1,7 +1,8 @@
-import os, subprocess, tempfile, logging
+import os, subprocess, tempfile
 from fastapi import HTTPException
 from app.core.models import Peer, Service
 from app.core.config import settings
+from app.core.logger import logging
 
 def apply_to_wg_config(peer: Peer|Service):
     """Apply the peer configuration to the WireGuard interface."""
