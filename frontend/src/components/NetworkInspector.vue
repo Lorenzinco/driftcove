@@ -58,15 +58,86 @@
 
 
         <v-divider class="my-4"/>
-        <div class="text-subtitle-2 mb-2">Topology JSON</div>
-            <v-textarea :model-value="json" auto-grow rows="8" readonly class="mono" />
-
-
-            <div class="d-flex ga-2 mt-2">
-                <v-btn prepend-icon="mdi-content-copy" @click="copyJson">Copy</v-btn>
-                <v-btn variant="tonal" prepend-icon="mdi-content-save" @click="exportJson">Export</v-btn>
-                <v-btn variant="tonal" prepend-icon="mdi-folder-open" @click="importJson">Import</v-btn>
+        <v-expansion-panels multiple>
+            <v-expansion-panel value="subnets">
+                <v-expansion-panel-title class="text-subtitle-2">
+                    <v-icon icon="mdi-lan" size="18" class="me-1"/> Subnetworks ({{ store.subnets.length }})
+                </v-expansion-panel-title>
+                <v-expansion-panel-text>
+                    <v-list density="compact">
+                        <v-list-item
+                            v-for="s in store.subnets"
+                            :key="s.id"
+                            :title="s.name + ' (' + s.cidr + ')'"
+                            @click="selectSubnet(s)"
+                            :active="!!(store.selection && store.selection.type==='subnet' && store.selection.id===s.id)"
+                            rounded="sm"
+                        >
+                            <template #prepend>
+                                <v-icon icon="mdi-hexagon-multiple-outline" size="16" class="me-1" />
+                            </template>
+                        </v-list-item>
+                        <v-list-item v-if="!store.subnets.length" title="No subnets" disabled />
+                    </v-list>
+                </v-expansion-panel-text>
+            </v-expansion-panel>
+            <v-expansion-panel value="hosts">
+                <v-expansion-panel-title class="text-subtitle-2">
+                    <v-icon icon="mdi-server" size="18" class="me-1"/> Hosts ({{ hostPeers.length }})
+                </v-expansion-panel-title>
+                <v-expansion-panel-text>
+                    <v-list density="compact">
+                        <v-list-item
+                            v-for="p in hostPeers"
+                            :key="p.id"
+                            :title="p.name + (p.ip ? ' ('+p.ip+')' : '')"
+                            @click="selectPeer(p)"
+                            :active="!!(store.selection && store.selection.type==='peer' && store.selection.id===p.id)"
+                            rounded="sm"
+                        >
+                            <template #prepend>
+                                <v-icon icon="mdi-server" size="16" class="me-1" />
+                            </template>
+                            <template #append>
+                                <v-icon :color="p.allowed ? 'blue' : 'yellow'" icon="mdi-lightbulb" size="16" />
+                            </template>
+                        </v-list-item>
+                        <v-list-item v-if="!hostPeers.length" title="No hosts" disabled />
+                    </v-list>
+                </v-expansion-panel-text>
+            </v-expansion-panel>
+            <v-expansion-panel value="peers">
+                <v-expansion-panel-title class="text-subtitle-2">
+                    <v-icon icon="mdi-account-group" size="18" class="me-1"/> Peers ({{ nonHostPeers.length }})
+                </v-expansion-panel-title>
+                <v-expansion-panel-text>
+                    <v-list density="compact">
+                        <v-list-item
+                            v-for="p in nonHostPeers"
+                            :key="p.id"
+                            :title="p.name + (p.ip ? ' ('+p.ip+')' : '')"
+                            @click="selectPeer(p)"
+                            :active="!!(store.selection && store.selection.type==='peer' && store.selection.id===p.id)"
+                            rounded="sm"
+                        >
+                            <template #prepend>
+                                <v-icon icon="mdi-account-circle-outline" size="16" class="me-1" />
+                            </template>
+                            <template #append>
+                                <v-icon :color="p.allowed ? 'blue' : 'yellow'" icon="mdi-lightbulb" size="16" />
+                            </template>
+                        </v-list-item>
+                        <v-list-item v-if="!nonHostPeers.length" title="No peers" disabled />
+                    </v-list>
+                </v-expansion-panel-text>
+            </v-expansion-panel>
+        </v-expansion-panels>
+            <div class="mt-3">
+                <v-btn block color="primary" :loading="applying" prepend-icon="mdi-cloud-upload" @click="applyToBackend">Apply Topology To Backend</v-btn>
             </div>
+            <v-alert v-if="applyMessage" :type="applySuccess ? 'success' : 'error'" density="comfortable" class="mt-3" dismissible @click:close="applyMessage=''">
+                {{ applyMessage }}
+            </v-alert>
                 <div style="height:80px; flex-shrink:0;"></div>
         </div>
     </template>
@@ -75,43 +146,49 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useNetworkStore } from '@/stores/network'
+import { useBackendInteractionStore } from '@/stores/backendInteraction'
 
 
 const store = useNetworkStore()
+const backend = useBackendInteractionStore()
 const confirmOpen = ref(false)
+const applying = ref(false)
+const applyMessage = ref('')
+const applySuccess = ref(false)
 
 
-const json = computed(() => JSON.stringify({ peers: store.peers, subnets: store.subnets, links: store.links }, null, 2))
+// Categorised peer lists
+const hostPeers = computed(() => store.peers.filter(p => p.host))
+const nonHostPeers = computed(() => store.peers.filter(p => !p.host))
 
-
-function copyJson() {
-navigator.clipboard?.writeText(JSON.stringify({ peers: store.peers, subnets: store.subnets, links: store.links }))
-}
-
-
-function exportJson() {
-const data = JSON.stringify({ peers: store.peers, subnets: store.subnets, links: store.links }, null, 2)
-const blob = new Blob([data], { type: 'application/json' })
-const url = URL.createObjectURL(blob)
-const a = document.createElement('a'); a.href = url; a.download = 'topology.json'; a.click(); URL.revokeObjectURL(url)
-}
-
-
-async function importJson() {
-try {
-const [h] = await (window as any).showOpenFilePicker({ types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }] })
-const f = await h.getFile(); const txt = await f.text(); const o = JSON.parse(txt)
-if (o.peers && o.subnets && o.links) {
-store.peers = o.peers
-store.subnets = o.subnets
-store.links = o.links
-}
-} catch {}
+function selectPeer(p:any) { store.openPeerDetails(p.id) }
+function selectSubnet(s:any) {
+    store.selection = { type: 'subnet', id: s.id, name: s.name }
 }
 
 function performDelete() {
     store.deleteSelection()
     confirmOpen.value = false
+}
+
+async function applyToBackend() {
+    applying.value = true
+    applyMessage.value = ''
+    try {
+        const payload = backend.buildCurrentTopologyPayload()
+        const ok = await backend.uploadTopology(payload)
+        applySuccess.value = !!ok
+        applyMessage.value = ok ? 'Topology uploaded successfully' : (backend.lastError || 'Upload failed')
+        if (ok) {
+            // Refresh topology from backend to sync any generated keys / adjustments
+            await backend.fetchTopology(true)
+        }
+    } catch (e:any) {
+        applySuccess.value = false
+        applyMessage.value = e?.message || 'Unexpected error while uploading'
+    } finally {
+        applying.value = false
+    }
 }
 </script>
 

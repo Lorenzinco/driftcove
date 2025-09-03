@@ -42,8 +42,7 @@ def create_service(service_name:str, department:str, username:str, port:int, _: 
                             y=peer.y,
                             department=department,
                             port=port)
-            db.create_service(service)
-            apply_to_wg_config(service)
+            db.create_service(peer,service)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to create service: {e}")
             
@@ -59,14 +58,11 @@ def delete_service(service_name: str, _: Annotated[str, Depends(verify_token)]):
             service= db.get_service_by_name(service_name)
             if service is None:
                 raise HTTPException(status_code=404, detail="Service not found")
-            logging .info(f"Deleting service {service.name} with address {service.address} from wireguard configuration")
-            remove_from_wg_config(service)
             peers_linked = db.get_service_peers(service)
             # Remove the service from the allowed IPs of the peers
             for peer in peers_linked:
                 logging.info(f"Removing service {service.name} from peer {peer.username}")
                 remove_link_with_port(peer.address, service.address)
-                db.remove_peer_service_link(peer, service)
             logging.info(f"Removing service {service.name} from the database")
             db.delete_service(service)
 
@@ -77,7 +73,7 @@ def delete_service(service_name: str, _: Annotated[str, Depends(verify_token)]):
 @router.post("/connect",tags=["service"])
 def service_connect(username: str, service_name: str, _: Annotated[str, Depends(verify_token)]):
     """
-    Connect a peer to a service, provice the username of the peer and the name of the service, if both exists,
+    Connect a peer to a service, provide the username of the peer and the name of the service, if both exists,
     the peer will be added to the users of the service and the link will be allowed in iptables.
     """
     with lock.write_lock(), state_manager.saved_state():

@@ -89,6 +89,179 @@
       </v-card-actions>
     </v-card>
   </v-dialog>
+
+  <!-- Peer Details Dialog -->
+  <v-dialog v-model="peerDetails.open" max-width="520">
+    <v-card v-if="selectedPeerEntity">
+      <v-card-title class="d-flex align-center justify-space-between pr-2">
+        <span class="text-subtitle-1 font-weight-medium">Peer Details</span>
+  <v-btn icon="mdi-close" variant="text" size="small" @click="peerDetails.open=false; store.closePeerDetails()" />
+      </v-card-title>
+      <v-divider />
+      <v-card-text class="pt-4">
+        <div class="mb-3">
+          <div class="text-body-2"><strong>Name:</strong> {{ selectedPeerEntity.name }}</div>
+          <div class="text-body-2"><strong>IP:</strong> {{ selectedPeerEntity.ip || '—' }}</div>
+          <div class="text-body-2"><strong>Public Key:</strong> {{ peerPublicKey }}</div>
+          <div class="text-body-2"><strong>Preshared Key:</strong> {{ selectedPeerEntity.presharedKey || '—' }}</div>
+          <div class="text-body-2"><strong>Subnet:</strong> {{ peerSubnetName || 'None' }}</div>
+          <div class="text-body-2 d-flex align-center ga-2">
+            <strong>Status:</strong>
+            <v-chip :color="selectedPeerEntity.allowed ? 'primary' : 'warning'" size="x-small" variant="flat">{{ selectedPeerEntity.allowed ? 'Connected' : 'Isolated' }}</v-chip>
+            <v-btn
+              v-if="!hasSubnetMembership && selectedPeerEntity.subnetId"
+              size="x-small"
+              variant="text"
+              icon="mdi-link-variant"
+              color="green"
+              :loading="connectLoading"
+              :title="'Connect peer to its subnet'"
+              @click="connectPeerToItsSubnet"
+            />
+            <v-btn
+              v-if="hasSubnetMembership && selectedPeerEntity.subnetId"
+              size="x-small"
+              variant="text"
+              icon="mdi-link-variant-off"
+              color="red"
+              :loading="connectLoading"
+              :title="'Disconnect peer from its subnet'"
+              @click="disconnectPeerFromItsSubnet"
+            />
+            <v-btn
+              v-if="!selectedPeerEntity.allowed"
+              size="x-small"
+              variant="text"
+              icon="mdi-information"
+              color="primary"
+              :title="'Why is this peer isolated?'"
+              @click="isolationInfo.open = true"
+            />
+          </div>
+          <div class="text-body-2"><strong>Host:</strong> {{ isHostPeer ? 'Yes' : 'No' }}</div>
+        </div>
+        <v-divider class="my-3" />
+        <div>
+          <div class="text-subtitle-2 mb-2 d-flex align-center">
+            <v-icon size="18" class="mr-1">mdi-server</v-icon>
+            Hosted Services ({{ serviceEntries.length }})
+          </div>
+          <div v-if="serviceEntries.length === 0" class="text-body-2 text-medium-emphasis">No hosted services.</div>
+          <v-expansion-panels multiple v-else>
+            <v-expansion-panel v-for="([svcKey, svc], idx) in serviceEntries" :key="svcKey">
+              <v-expansion-panel-title>
+                <div class="d-flex flex-column w-100">
+                  <div class="d-flex align-center justify-space-between w-100">
+                    <span>{{ svc.name || svcKey }}</span>
+                    <v-chip size="x-small" color="primary" variant="tonal">Port {{ svc.port }}</v-chip>
+                  </div>
+                  <small v-if="svc.department" class="text-medium-emphasis">{{ svc.department }}</small>
+                </div>
+              </v-expansion-panel-title>
+              <v-expansion-panel-text>
+                <div class="text-body-2 mb-1"><strong>Name:</strong> {{ svc.name || svcKey }}</div>
+                <div class="text-body-2 mb-1"><strong>Port:</strong> {{ svc.port }}</div>
+                <div class="text-body-2 mb-1"><strong>Department:</strong> {{ svc.department || '—' }}</div>
+                <div class="text-body-2 mb-1"><strong>Description:</strong> {{ svc.description || 'No description' }}</div>
+              </v-expansion-panel-text>
+            </v-expansion-panel>
+          </v-expansion-panels>
+        </div>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="peerDetails.open=false">Close</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+
+  <!-- Subnet Creation Dialog (opened when add-subnet tool active and empty canvas clicked) -->
+  <v-dialog v-model="subnetDialog.open" max-width="520">
+    <v-card>
+      <v-card-title class="text-subtitle-1 font-weight-medium">Create Subnet</v-card-title>
+      <v-card-text class="pt-2">
+        <v-text-field v-model="subnetDialog.subnet" label="CIDR" variant="outlined" density="comfortable" placeholder="10.0.2.0/24" :disabled="subnetDialog.loading" />
+        <v-text-field v-model="subnetDialog.name" label="Name" variant="outlined" density="comfortable" :disabled="subnetDialog.loading" />
+        <v-textarea v-model="subnetDialog.description" label="Description" variant="outlined" density="compact" auto-grow :disabled="subnetDialog.loading" />
+  <div class="text-caption text-medium-emphasis mt-2">Position captured at click (X: {{ subnetDialog.x }}, Y: {{ subnetDialog.y }})</div>
+        <v-alert v-if="subnetDialog.error" type="error" density="compact" class="mt-3" variant="tonal">{{ subnetDialog.error }}</v-alert>
+        <v-alert v-else-if="subnetDialog.success" type="success" density="compact" class="mt-3" variant="tonal">Subnet created.</v-alert>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="closeSubnetDialog" :disabled="subnetDialog.loading">Cancel</v-btn>
+        <v-btn color="primary" :loading="subnetDialog.loading" :disabled="!canCreateSubnet" @click="submitSubnet">Create</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+
+  <!-- Connection Choice Dialog -->
+  <v-dialog v-model="connectState.dialogOpen" max-width="460">
+    <v-card>
+      <v-card-title class="text-subtitle-1 font-weight-medium">Create Connection</v-card-title>
+      <v-card-text class="pt-2">
+        <div class="text-body-2 mb-2">From: <strong>{{ peerName(connectState.fromPeerId) }}</strong></div>
+        <div class="text-body-2 mb-4">To: <strong>{{ peerName(connectState.pendingPeerId) }}</strong></div>
+        <v-radio-group v-model="connectState.selectedMode" class="mb-2 connection-mode-group" :disabled="false">
+          <v-radio value="p2p" class="mb-2">
+            <template #label>
+              <div class="d-flex flex-column">
+                <span class="d-flex align-center ga-1">
+                  <v-icon size="16" color="green">mdi-account-arrow-right</v-icon>
+                  <strong>Peer ↔ Peer</strong>
+                </span>
+                <span class="text-caption text-medium-emphasis">Direct link between two peers (green line).</span>
+              </div>
+            </template>
+          </v-radio>
+          <v-radio v-if="connectState.services.length" value="service" class="mb-1">
+            <template #label>
+              <div class="d-flex flex-column">
+                <span class="d-flex align-center ga-1">
+                  <v-icon size="16" color="primary">mdi-server-network</v-icon>
+                  <strong>Peer ↔ Service</strong>
+                </span>
+                <span class="text-caption text-medium-emphasis">Route traffic to a specific hosted service on target (blue line).</span>
+              </div>
+            </template>
+          </v-radio>
+          <div v-else class="text-caption text-medium-emphasis mt-1">Target peer hosts no services.</div>
+        </v-radio-group>
+        <v-select
+          v-if="connectState.selectedMode==='service' && connectState.services.length"
+          :items="connectState.services.map(s=>({ title: s[0], value: s[0] }))"
+          v-model="connectState.selectedService"
+          label="Service"
+          density="comfortable"
+          variant="outlined"
+        />
+        <div v-else-if="connectState.selectedMode==='service'" class="text-caption text-medium-emphasis">No services available on target.</div>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="resetConnection">Cancel</v-btn>
+        <v-btn color="primary" @click="finalizeConnection" :disabled="connectState.selectedMode==='service' && !connectState.selectedService">Connect</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+  <v-bottom-sheet v-model="isolationInfo.open">
+    <v-card>
+      <v-card-title class="text-subtitle-1">Why is this peer isolated?</v-card-title>
+      <v-card-text class="text-body-2">
+        <p>This peer currently has no active connections (p2p, service, or subnet membership). A peer becomes Connected when it participates in at least one link.</p>
+        <ul class="pl-4">
+          <li>Create a Peer ↔ Peer link.</li>
+          <li>Create a Peer ↔ Service link to a host's service.</li>
+          <li>Use the green chain button to connect the peer to its subnet.</li>
+        </ul>
+        <p>After creating a connection the status updates on the next topology refresh (or immediately after the action).</p>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="isolationInfo.open=false">Close</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-bottom-sheet>
 </template>
 
 <script setup lang="ts">
@@ -174,13 +347,32 @@
   }
 
   function drawLinks(ctx: CanvasRenderingContext2D) {
-    ctx.save(); ctx.lineWidth = 2; ctx.strokeStyle = CATEGORY_COLORS.link
+    ctx.save(); ctx.lineWidth = 2
     for (const e of store.links) {
       const a = store.peers.find(p => p.id === e.fromId)
       const b = store.peers.find(p => p.id === e.toId)
       if (!a || !b) continue
       const A = toScreen(a.x, a.y); const B = toScreen(b.x, b.y)
-      ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke()
+      ctx.beginPath();
+      // Color by kind
+      if (e.kind === 'p2p') ctx.strokeStyle = '#4CAF50' // green
+      else if (e.kind === 'service') ctx.strokeStyle = '#2196F3' // blue
+      else ctx.strokeStyle = CATEGORY_COLORS.link
+      ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke()
+      // Service label midpoint
+      if (e.kind === 'service' && e.serviceName) {
+        const mx = (A.x + B.x)/2, my = (A.y + B.y)/2
+        ctx.save(); ctx.fillStyle = 'rgba(33,150,243,0.15)'; ctx.strokeStyle = '#2196F3'; const pad=4; ctx.font = `${11*store.zoom}px ui-sans-serif`; const text = e.serviceName; const tw = ctx.measureText(text).width; const th = 12*store.zoom; ctx.beginPath(); ctx.roundRect?.(mx - tw/2 - pad, my - th/2 - pad, tw + pad*2, th + pad*2, 4*store.zoom); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#FFFFFF'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(text, mx, my); ctx.restore()
+      }
+    }
+    // Ghost link
+    if (connectState.active && connectState.fromPeerId && connectState.ghostTo) {
+      const a = store.peers.find(p=>p.id===connectState.fromPeerId)
+      if (a) {
+        const A = toScreen(a.x, a.y)
+        const B = toScreen(connectState.ghostTo.x, connectState.ghostTo.y)
+        ctx.save(); ctx.setLineDash([6,4]); ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); ctx.restore()
+      }
     }
     ctx.restore()
   }
@@ -206,13 +398,61 @@
     ctx.restore()
   }
 
+  function drawServerIcon(ctx: CanvasRenderingContext2D, x: number, y: number, allowed: boolean) {
+    const w = 34 * store.zoom, h = 44 * store.zoom
+    ctx.save(); ctx.translate(x, y)
+    const stroke = allowed ? CATEGORY_COLORS.peer : '#999999'
+    const fill = allowed ? 'rgba(122,215,240,0.22)' : 'rgba(160,160,160,0.18)'
+    ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = 2
+    // Chassis
+    ctx.beginPath(); (ctx as any).roundRect?.(-w/2, -h/2, w, h, 5); ctx.fill(); ctx.stroke()
+    // Drive bays / slots
+    ctx.fillStyle = stroke
+    const slotH = 6 * store.zoom
+    for (let i=0;i<3;i++) {
+      ctx.beginPath(); ctx.roundRect?.(-w/2 + 6*store.zoom, -h/2 + 8*store.zoom + i* (slotH + 5*store.zoom), w - 12*store.zoom, slotH, 2*store.zoom)
+      ctx.globalAlpha = 0.55; ctx.fill(); ctx.globalAlpha = 1
+    }
+    // Power indicator
+    const r = 4 * store.zoom
+    ctx.beginPath(); ctx.arc(0, h/2 - r - 6*store.zoom, r, 0, Math.PI*2); ctx.fillStyle = allowed ? '#4CAF50' : '#FFC107'; ctx.fill(); ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke()
+    // Warning badge if isolated
+    if (!allowed) {
+      const rb = 7 * store.zoom
+      const bx = w/2 - rb - 3*store.zoom
+      const by = -h/2 + rb + 3*store.zoom
+      ctx.beginPath(); ctx.arc(bx, by, rb, 0, Math.PI*2)
+      ctx.fillStyle = '#FFC107'; ctx.fill(); ctx.strokeStyle = '#222'; ctx.lineWidth = 1; ctx.stroke()
+      ctx.fillStyle = '#222'; ctx.font = `${9*store.zoom}px ui-sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('!', bx, by+0.5*store.zoom)
+    }
+    ctx.restore()
+  }
+
   function drawPeers(ctx: CanvasRenderingContext2D) {
     for (const n of store.peers) {
       const { x, y } = toScreen(n.x, n.y)
-  ctx.save(); drawPCIcon(ctx, x, y, !!(n as any).allowed)
+      const isHost = (n as any).host && n.host === true && n.services && Object.keys(n.services).length > 0
+      ctx.save();
+      if (isHost) {
+        drawServerIcon(ctx, x, y, !!(n as any).allowed)
+      } else {
+        drawPCIcon(ctx, x, y, !!(n as any).allowed)
+      }
       ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.font = '600 12px ui-sans-serif, system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'top'
       const nameY = y + 24 * store.zoom; ctx.fillText(n.name, x, nameY)
       if (store.hoverPeerId === n.id) { ctx.font = '500 11px ui-sans-serif, system-ui'; ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fillText(n.ip || '(no ip)', x, nameY + 14) }
+      // Info icon when hovering a host peer
+      if (store.hoverPeerId === n.id) {
+        const iconR = 10 * store.zoom
+        const ix = x + 30 * store.zoom
+        const iy = y - 22 * store.zoom
+        ctx.beginPath(); ctx.arc(ix, iy, iconR, 0, Math.PI*2)
+        ctx.fillStyle = isHost ? '#2196F3' : '#555'
+        ctx.fill()
+        ctx.strokeStyle = isHost ? '#0D47A1' : '#222'
+        ctx.lineWidth = 1.5; ctx.stroke()
+        ctx.fillStyle = '#fff'; ctx.font = `${11*store.zoom}px ui-sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('i', ix, iy+0.5*store.zoom)
+      }
       ctx.restore()
     }
   }
@@ -237,7 +477,7 @@
     const canvas = canvasRef.value; const ctx = ctxRef.value; if (!canvas || !ctx) return
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     const width = canvas.width / dpr, height = canvas.height / dpr
-    drawGrid(ctx, width, height); drawSubnets(ctx); drawLinks(ctx); drawPeers(ctx); highlightSelection(ctx)
+  drawGrid(ctx, width, height); drawSubnets(ctx); drawLinks(ctx); drawPeers(ctx); drawGhostConnectIcon(ctx); drawGhostSubnet(ctx); highlightSelection(ctx)
   }
 
   // Immediate redraw on grid toggle
@@ -249,7 +489,7 @@
   // Aggregate watchers for peers/subnets/links to refresh on any field mutation (name/ip/coords/size/etc.)
   watch(
     () => [
-      store.peers.map(p => `${p.id}:${p.x}:${p.y}:${p.name}:${p.ip}:${p.subnetId}`).join('|'),
+  store.peers.map(p => `${p.id}:${p.x}:${p.y}:${p.name}:${p.ip}:${p.subnetId}:${(p as any).host?1:0}:${p.services ? Object.keys(p.services).length : 0}`).join('|'),
       store.subnets.map(s => `${s.id}:${s.x}:${s.y}:${s.width}:${s.height}:${s.name}:${s.cidr}`).join('|'),
       store.links.map(l => `${l.id}:${l.fromId}:${l.toId}`).join('|')
     ],
@@ -310,6 +550,11 @@
     }
   }
 
+  const clickDetect = reactive({ down:false, x:0, y:0, targetPeerId:'', targetType:'' as ''|'peer'|'subnet', moved:false })
+  // Connection state for connect tool
+  const connectState = reactive({ active:false, fromPeerId:'', ghostTo: null as null | { x:number; y:number }, pendingPeerId:'', dialogOpen:false, targetPeer:null as any, services: [] as Array<[string, any]>, selectedMode:'p2p' as 'p2p'|'service', selectedService:'' })
+  const connectCursor = reactive({ active:false, x:0, y:0 })
+
   function onMousedown(e: MouseEvent) {
     const rect = canvasRef.value!.getBoundingClientRect()
     const sx = e.pageX - (rect.left + window.scrollX)
@@ -322,14 +567,30 @@
     }
 
     if (e.button === 1 || (e.button === 0 && e.shiftKey)) { store.pan.dragging = true; store.pan.sx = sx; store.pan.sy = sy; return }
-    if (store.tool === 'add-peer') { store.addPeerAt(pt.x, pt.y); draw(); return }
-    if (store.tool === 'add-subnet') { store.addSubnetAt(pt.x, pt.y); draw(); return }
+    if (store.tool === 'add-subnet') {
+      // If clicking empty space (no peer/subnet), open dialog at position
+      const peer = hitTestPeer(pt); const subnet = peer ? null : hitTestSubnet(pt)
+      if (!peer && !subnet) {
+        openSubnetDialog(pt.x, pt.y)
+        return
+      }
+    }
 
     const peer = hitTestPeer(pt); const subnet = peer ? null : hitTestSubnet(pt)
     if (store.tool === 'connect') {
       if (peer) {
-        if (!(store as any).connectFrom) (store as any).connectFrom = peer.id
-        else if ((store as any).connectFrom !== peer.id) { store.links.push({ id: 'l_' + Math.random().toString(36).slice(2,9), fromId: (store as any).connectFrom, toId: peer.id }); (store as any).connectFrom = null }
+        if (!connectState.active) {
+          connectState.active = true; connectState.fromPeerId = peer.id; connectState.ghostTo = { x: peer.x, y: peer.y }
+        } else if (connectState.fromPeerId && connectState.fromPeerId !== peer.id) {
+          // Second endpoint chosen -> open dialog
+          connectState.pendingPeerId = peer.id
+          const target = store.peers.find(p=>p.id===peer.id)
+          connectState.targetPeer = target || null
+          connectState.services = target && target.services ? Object.entries(target.services) : []
+          connectState.selectedMode = connectState.services.length ? 'service' : 'p2p'
+          connectState.selectedService = connectState.services.length ? connectState.services[0][0] : ''
+          connectState.dialogOpen = true
+        }
         store.selection = { type: 'peer', id: peer.id, name: peer.name }; draw()
       }
       return
@@ -338,22 +599,25 @@
     if (peer) {
       store.selection = { type: 'peer', id: peer.id, name: peer.name }
       drag.active = true; drag.type='peer'; drag.id=peer.id; drag.offsetX = pt.x - peer.x; drag.offsetY = pt.y - peer.y; drag.containedPeers = []
+      clickDetect.down = true; clickDetect.x = pt.x; clickDetect.y = pt.y; clickDetect.targetPeerId = peer.id; clickDetect.targetType = 'peer'; clickDetect.moved = false
     } else if (subnet) {
       store.selection = { type: 'subnet', id: subnet.id, name: subnet.name }
       // Capture peers inside subnet to move them with it
       const left = subnet.x - subnet.width/2, right = subnet.x + subnet.width/2, top = subnet.y - subnet.height/2, bottom = subnet.y + subnet.height/2
       drag.containedPeers = store.peers.filter(p => p.x >= left && p.x <= right && p.y >= top && p.y <= bottom).map(p=>p.id)
       drag.active = true; drag.type='subnet'; drag.id=subnet.id; drag.offsetX = pt.x - subnet.x; drag.offsetY = pt.y - subnet.y
+      clickDetect.down = true; clickDetect.x = pt.x; clickDetect.y = pt.y; clickDetect.targetPeerId = ''; clickDetect.targetType = 'subnet'; clickDetect.moved = false
     } else {
       store.selection = null
+      clickDetect.down = false
     }
     draw()
   }
 
   function onMousemove(e: MouseEvent) {
     const rect = canvasRef.value!.getBoundingClientRect()
-    const sx = e.pageX - (rect.left + window.scrollY)
-    const sy = e.pageY - (rect.top + window.scrollY)
+  const sx = e.pageX - (rect.left + window.scrollX)
+  const sy = e.pageY - (rect.top + window.scrollY)
     if (store.pan.dragging) { store.pan.x += sx - store.pan.sx; store.pan.y += sy - store.pan.sy; store.pan.sx = sx; store.pan.sy = sy; draw(); return }
     const pt = toWorld(sx, sy)
     if (resizeDrag.active) {
@@ -382,7 +646,16 @@
           for (const p of store.peers) if (drag.containedPeers.includes(p.id)) { p.x += dx; p.y += dy }
         }
       }
+      // Mark movement for click detection
+      if (clickDetect.down && !clickDetect.moved) {
+        const mdx = pt.x - clickDetect.x, mdy = pt.y - clickDetect.y
+        if (Math.hypot(mdx, mdy) > 4 / store.zoom) clickDetect.moved = true
+      }
       draw(); return
+    }
+    if (clickDetect.down && !clickDetect.moved) {
+      const dx = pt.x - clickDetect.x, dy = pt.y - clickDetect.y
+      if (Math.hypot(dx, dy) > 4 / store.zoom) clickDetect.moved = true
     }
     // Edge hover detection
     let edge: EdgeDir = ''
@@ -396,6 +669,26 @@
     const newPeerId = hoverPeer ? hoverPeer.id : null
     const newSubnetId = hoverSubnet ? hoverSubnet.id : null
     if (newPeerId !== store.hoverPeerId || newSubnetId !== store.hoverSubnetId) { store.hoverPeerId = newPeerId; store.hoverSubnetId = newSubnetId; draw() }
+    // Pointer cursor for host peers
+  if (!edge && hoverPeer) { if (canvas) canvas.style.cursor = 'pointer' }
+    // Update ghost connection line
+    if (store.tool==='connect' && connectState.active && connectState.fromPeerId && !connectState.dialogOpen) {
+      connectState.ghostTo = { x: pt.x, y: pt.y }
+      draw()
+    }
+    if (store.tool==='connect' && !connectState.active && !connectState.dialogOpen) {
+      connectCursor.active = true
+      connectCursor.x = pt.x
+      connectCursor.y = pt.y
+      draw()
+    }
+    // Ghost subnet update when tool active
+    if (store.tool === 'add-subnet' && !drag.active && !resizeDrag.active && !subnetDialog.open && !ghostSubnet.locked) {
+      ghostSubnet.active = true
+      ghostSubnet.x = pt.x
+      ghostSubnet.y = pt.y
+      draw()
+    }
   }
 
   function onMouseup() {
@@ -405,6 +698,12 @@
       if (sub) for (const p of store.peers) if (p.subnetId === sub.id) clampToSubnet(p)
       resizeDrag.active = false
     }
+    // Single click detection: open peer detail dialog
+    if (clickDetect.down && !clickDetect.moved && clickDetect.targetType === 'peer' && clickDetect.targetPeerId) {
+      const peer = store.peers.find(p=>p.id===clickDetect.targetPeerId)
+      if (peer) { store.openPeerDetails(peer.id) }
+    }
+    clickDetect.down = false
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -449,6 +748,196 @@
   function copyConfig() {
     if (!createPeerDialog.config) return
     navigator.clipboard?.writeText(createPeerDialog.config).catch(()=>{})
+  }
+
+  // Peer details dialog state & computed data
+  const peerDetails = reactive({ open:false })
+  const isolationInfo = reactive({ open:false })
+  const connectLoading = ref(false)
+  watch(() => store.peerDetailsRequestVersion, () => {
+    if (store.peerDetailsRequestId) peerDetails.open = true
+  })
+  const selectedPeerEntity = computed(() => store.selectedPeer)
+  const peerSubnetName = computed(() => {
+    const p = selectedPeerEntity.value; if (!p) return ''
+    if (!p.subnetId) return ''
+    const s = store.subnets.find(s=>s.id===p.subnetId)
+    return s ? (s.name || s.cidr) : ''
+  })
+  const isHostPeer = computed(() => {
+    const p = selectedPeerEntity.value; return !!(p && (p as any).host && p.services && Object.keys(p.services).length>0)
+  })
+  const serviceEntries = computed(() => {
+    const p:any = selectedPeerEntity.value; if (!p || !p.services) return [] as Array<[string, any]>
+    return Object.entries(p.services)
+  })
+  const peerPublicKey = computed(() => {
+    const p = selectedPeerEntity.value; if (!p) return ''
+    return p.id.startsWith('peer_') ? p.id.slice(5) : p.id
+  })
+  const selectedPeerSubnetCidr = computed(() => {
+    const p = selectedPeerEntity.value; if (!p || !p.subnetId) return ''
+    const s = store.subnets.find(s=>s.id===p.subnetId)
+    return s?.cidr || ''
+  })
+  const hasSubnetMembership = computed(() => {
+    const p = selectedPeerEntity.value; if (!p || !p.subnetId) return false
+    return store.links.some(l => l.kind === 'membership' && l.fromId === p.id && l.toId === p.subnetId)
+  })
+  async function connectPeerToItsSubnet() {
+    const p = selectedPeerEntity.value
+    if (!p || !p.subnetId) return
+    const cidr = selectedPeerSubnetCidr.value
+    if (!cidr) return
+    connectLoading.value = true
+    try {
+      await backend.connectPeerToSubnet(p.name, cidr)
+    } finally { connectLoading.value = false }
+  }
+  async function disconnectPeerFromItsSubnet() {
+    const p = selectedPeerEntity.value
+    if (!p || !p.subnetId) return
+    const cidr = selectedPeerSubnetCidr.value
+    if (!cidr) return
+    connectLoading.value = true
+    try {
+      await backend.disconnectPeerFromSubnet(p.name, cidr)
+    } finally { connectLoading.value = false }
+  }
+  function peerName(id:string){ const p = store.peers.find(pp=>pp.id===id); return p? p.name : '' }
+
+  // Subnet creation dialog state
+  const subnetDialog = reactive({ open:false, subnet:'', name:'', description:'', x:0, y:0, loading:false, error:'', success:false })
+  const canCreateSubnet = computed(() => !!subnetDialog.subnet && !!subnetDialog.name && !subnetDialog.loading)
+  function openSubnetDialog(x:number,y:number){
+    subnetDialog.open = true
+    subnetDialog.subnet=''
+    subnetDialog.name=''
+    subnetDialog.description=''
+    subnetDialog.x = Math.round(x)
+    subnetDialog.y = Math.round(y)
+    subnetDialog.loading=false
+    subnetDialog.error=''
+    subnetDialog.success=false
+    // Lock ghost at click position
+    ghostSubnet.active = true
+    ghostSubnet.locked = true
+    ghostSubnet.x = x
+    ghostSubnet.y = y
+    draw()
+  }
+  function closeSubnetDialog(){
+    subnetDialog.open=false
+    ghostSubnet.locked = false
+    ghostSubnet.active = false
+  store.tool = 'select'
+    draw()
+  }
+  async function submitSubnet(){
+    if (!canCreateSubnet.value) return
+    subnetDialog.loading=true; subnetDialog.error=''; subnetDialog.success=false
+    try {
+      const ok = await backend.createSubnet(subnetDialog.subnet.trim(), subnetDialog.name.trim(), subnetDialog.description.trim(), subnetDialog.x, subnetDialog.y)
+      if (!ok){ subnetDialog.error = backend.lastError || 'Failed to create subnet' }
+      else {
+        subnetDialog.success=true; await backend.fetchTopology(true)
+        // Place newly created subnet at chosen coordinates (after topology merge assigns default layout)
+        const newId = 'subnet_' + subnetDialog.subnet.trim()
+        const created = store.subnets.find(s=>s.id===newId)
+        if (created) { created.x = subnetDialog.x; created.y = subnetDialog.y }
+        draw()
+      }
+    } catch(e:any){ subnetDialog.error = e?.message || 'Unexpected error' }
+    finally { subnetDialog.loading=false }
+  }
+
+  // Ghost subnet state & drawing
+  const ghostSubnet = reactive({ active:false, x:0, y:0, width:420, height:260, locked:false })
+  function drawGhostSubnet(ctx: CanvasRenderingContext2D){
+    if (!(ghostSubnet.active && store.tool==='add-subnet')) return
+    const { x, y } = toScreen(ghostSubnet.x, ghostSubnet.y)
+    const w = ghostSubnet.width * store.zoom
+    const h = ghostSubnet.height * store.zoom
+    ctx.save()
+    ctx.globalAlpha = 0.18
+    ctx.fillStyle = '#4CAF50'
+    ctx.beginPath(); ctx.rect(x - w/2, y - h/2, w, h); ctx.fill()
+    ctx.globalAlpha = 1
+    ctx.setLineDash([6,4])
+    ctx.strokeStyle = '#4CAF50'; ctx.lineWidth = 2
+    ctx.strokeRect(x - w/2, y - h/2, w, h)
+    // Plus sign under rectangle
+    const plusY = y + h/2 + 14*store.zoom
+    const plusX = x
+    ctx.fillStyle = '#4CAF50'; ctx.font = `${22*store.zoom}px ui-sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('+', plusX, plusY)
+    ctx.restore()
+  }
+  watch(() => store.tool, (t) => {
+    if (t!=='add-subnet') { ghostSubnet.active=false; ghostSubnet.locked=false }
+    if (t!=='connect' && connectState.active) { resetConnection() }
+    if (t!=='connect') { connectCursor.active = false }
+    draw()
+  })
+
+  function drawGhostConnectIcon(ctx: CanvasRenderingContext2D){
+    if (!(store.tool==='connect' && !connectState.active && connectCursor.active)) return
+    const S = toScreen(connectCursor.x, connectCursor.y)
+    ctx.save()
+    const r = 20 * store.zoom
+    // Outer soft halo
+    ctx.globalAlpha = 0.16
+    ctx.fillStyle = '#4D6DFF'
+    ctx.beginPath(); ctx.arc(S.x, S.y, r, 0, Math.PI*2); ctx.fill()
+    ctx.globalAlpha = 1
+    ctx.strokeStyle = '#4D6DFF'; ctx.setLineDash([5,4]); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(S.x, S.y, r-1*store.zoom, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([])
+    // Chain links (two interlocked paths)
+    const linkW = 18 * store.zoom
+    const linkH = 10 * store.zoom
+    const gap = 4 * store.zoom
+    ctx.lineWidth = 2.2 * store.zoom
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    // Left link
+    ctx.strokeStyle = '#FFFFFF'
+    ctx.beginPath()
+    ctx.ellipse(S.x - gap/2, S.y, linkW/2, linkH/2, Math.PI/8, 0, Math.PI*2)
+    ctx.stroke()
+    // Right link
+    ctx.beginPath()
+    ctx.ellipse(S.x + gap/2, S.y, linkW/2, linkH/2, -Math.PI/8, 0, Math.PI*2)
+    ctx.stroke()
+    // Overlap highlight
+    ctx.strokeStyle = '#86A1FF'
+    ctx.beginPath()
+    ctx.moveTo(S.x - gap*0.15, S.y - linkH*0.55)
+    ctx.lineTo(S.x + gap*0.15, S.y - linkH*0.55)
+    ctx.moveTo(S.x - gap*0.15, S.y + linkH*0.55)
+    ctx.lineTo(S.x + gap*0.15, S.y + linkH*0.55)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  // Accept / create link from dialog
+  function finalizeConnection() {
+    if (!(connectState.fromPeerId && connectState.pendingPeerId)) return
+    const id = 'link_' + Math.random().toString(36).slice(2,9)
+    if (connectState.selectedMode === 'p2p') {
+      store.links.push({ id, fromId: connectState.fromPeerId, toId: connectState.pendingPeerId, kind: 'p2p' })
+    } else if (connectState.selectedMode === 'service' && connectState.selectedService) {
+      store.links.push({ id, fromId: connectState.fromPeerId, toId: connectState.pendingPeerId, kind: 'service', serviceName: connectState.selectedService })
+    }
+    resetConnection()
+    draw()
+  }
+  function resetConnection() {
+    connectState.active = false
+    connectState.fromPeerId=''
+    connectState.pendingPeerId=''
+    connectState.ghostTo=null
+    connectState.dialogOpen=false
+    connectState.targetPeer=null
+    connectState.services=[]
+    connectState.selectedService=''
   }
 
   const hoverSubnet = computed(() => store.hoverSubnetId ? store.subnets.find(s=>s.id===store.hoverSubnetId) || null : null)

@@ -1,20 +1,21 @@
 import { defineStore } from 'pinia'
 
 
-export interface Peer { id: string; name: string; ip: string; subnetId: string | null; x: number; y: number; allowed: boolean }
+export interface ServiceInfo { port: number; name: string; department?: string; description?: string }
+export interface Peer { id: string; name: string; ip: string; subnetId: string | null; x: number; y: number; allowed: boolean; services?: Record<string, ServiceInfo>; host?: boolean; presharedKey?: string; publicKey?: string }
 export interface Subnet { id: string; name: string; cidr: string; description?: string; x: number; y: number; width: number; height: number }
-export interface Link { id: string; fromId: string; toId: string }
+export interface Link { id: string; fromId: string; toId: string; kind?: 'p2p' | 'service' | 'membership'; serviceName?: string }
 
 
 function uid(prefix = 'id') { return prefix + Math.random().toString(36).slice(2, 9) }
 
 
-export type Tool = 'select' | 'connect' | 'add-peer' | 'add-subnet'
+export type Tool = 'select' | 'connect' | 'cut' | 'add-subnet'
 
 
 export const useNetworkStore = defineStore('network', {
     state: () => ({
-    peers: [ { id: uid('p_'), name: 'Peer 1', ip: '10.0.1.10', subnetId: null, x: 540, y: 300, allowed: true } as Peer ],
+    peers: [ { id: uid('p_'), name: 'Peer 1', ip: '10.0.1.10', subnetId: null, x: 540, y: 300, allowed: true, services: {}, host: false } as Peer ],
         subnets: [ { id: uid('s_'), name: 'Office LAN', cidr: '10.0.1.0/24', x: 520, y: 300, width: 360, height: 240 } as Subnet ],
         links: [] as Link[],
 
@@ -32,7 +33,9 @@ export const useNetworkStore = defineStore('network', {
         hoverSubnetId: null as string | null,
 
 
-        inspectorOpen: true,
+    inspectorOpen: true,
+    peerDetailsRequestId: null as string | null,
+    peerDetailsRequestVersion: 0,
     }),
 
     getters: {
@@ -46,29 +49,14 @@ export const useNetworkStore = defineStore('network', {
 
     actions: {
         toggleInspector() { this.inspectorOpen = !this.inspectorOpen },
-
-        addPeerAt(x: number, y: number) {
-            const id = uid('p_')
-            this.peers.push({ id, name: 'Peer', ip: '', subnetId: null, x, y, allowed: true })
-            this.selection = { type: 'peer', id, name: 'Peer' }
-            this.tool = 'select'
+        openPeerDetails(peerId: string) {
+            this.selection = { type: 'peer', id: peerId, name: this.peers.find(p=>p.id===peerId)?.name || 'Peer' }
+            this.peerDetailsRequestId = peerId
+            this.peerDetailsRequestVersion++
         },
+        closePeerDetails() { /* hook for future side-effects */ },
 
-        addPeerInSubnet(subnetId: string) {
-            const s = this.subnets.find(s => s.id === subnetId)
-            if (!s) return
-            const id = uid('p_')
-            // place somewhere inside subnet with margin
-            const margin = 60
-            const left = s.x - s.width/2 + margin
-            const top = s.y - s.height/2 + margin
-            const right = s.x + s.width/2 - margin
-            const bottom = s.y + s.height/2 - margin
-            const x = left + Math.random() * (right - left)
-            const y = top + Math.random() * (bottom - top)
-            this.peers.push({ id, name: 'Peer', ip: '', subnetId: s.id, x, y, allowed: false })
-            this.selection = { type: 'peer', id, name: 'Peer' }
-        },
+    // (Peer add functionality removed per latest requirements)
 
         addSubnetAt(x: number, y: number) {
             const id = uid('s_')
@@ -107,7 +95,7 @@ export const useNetworkStore = defineStore('network', {
             }
         },
 
-    applyBackendTopology(payload: { subnets: Array<{ id: string; name: string; cidr: string; description?: string }>; peers: Array<{ id: string; name: string; ip: string; subnetId: string | null }>; links: Link[] }) {
+    applyBackendTopology(payload: { subnets: Array<{ id: string; name: string; cidr: string; description?: string; x?: number; y?: number; width?: number; height?: number }>; peers: Array<{ id: string; name: string; ip: string; subnetId: string | null; x?: number; y?: number; services?: Record<string, ServiceInfo>; host?: boolean; presharedKey?: string; publicKey?: string }>; links: Link[] }) {
             const oldSelection = this.selection
 
             // --- Subnets ---
@@ -125,12 +113,15 @@ export const useNetworkStore = defineStore('network', {
             const existingSubnets = this.subnets
             for (const inc of payload.subnets) {
                 if (!existingSubnets.find(s => s.id === inc.id)) {
-                    // Coordinate strategy: place to the right of the right-most subnet or default location
-                    let x = 520, y = 300, width = 420, height = 260
-                    if (existingSubnets.length) {
+                    // Use backend provided coordinates if present; else layout heuristic
+                    let width = inc.width ?? 420
+                    let height = inc.height ?? 260
+                    let x = inc.x ?? 520
+                    let y = inc.y ?? 300
+                    if ((inc.x === undefined || inc.y === undefined) && existingSubnets.length) {
                         const rightMost = existingSubnets.reduce((a,b)=> (a.x + a.width/2 > b.x + b.width/2 ? a : b))
                         x = rightMost.x + rightMost.width/2 + width/2 + 120
-                        y = rightMost.y // align row
+                        y = rightMost.y
                     }
                     this.subnets.push({ id: inc.id, name: inc.name, cidr: inc.cidr, description: inc.description, x, y, width, height })
                 }
@@ -155,14 +146,19 @@ export const useNetworkStore = defineStore('network', {
                     existing.subnetId = incoming.subnetId
                     // DO NOT change x,y per requirement
                 }
+                existing.services = incoming.services || {}
+                existing.host = !!(incoming.host || (incoming.services && Object.keys(incoming.services).length > 0))
+                if (incoming.presharedKey && existing.presharedKey !== incoming.presharedKey) existing.presharedKey = incoming.presharedKey
+                if (incoming.publicKey && existing.publicKey !== incoming.publicKey) existing.publicKey = incoming.publicKey
                 existing.allowed = !!peerAllowed[existing.id]
                 return true
             })
             for (const inc of payload.peers) {
                 if (!this.peers.find(p => p.id === inc.id)) {
-                    // New peer placement
-                    let x = 300 + Math.random()*200, y = 300 + Math.random()*200
-                    if (inc.subnetId) {
+                    // Use backend coordinates if provided, else derive
+                    let x = inc.x ?? 300 + Math.random()*200
+                    let y = inc.y ?? 300 + Math.random()*200
+                    if ((inc.x === undefined || inc.y === undefined) && inc.subnetId) {
                         const s = this.subnets.find(s => s.id === inc.subnetId)
                         if (s) {
                             const margin = 60
@@ -174,7 +170,7 @@ export const useNetworkStore = defineStore('network', {
                             y = top + Math.random()*(bottom-top)
                         }
                     }
-                    this.peers.push({ id: inc.id, name: inc.name, ip: inc.ip, subnetId: inc.subnetId, x, y, allowed: !!peerAllowed[inc.id] })
+                    this.peers.push({ id: inc.id, name: inc.name, ip: inc.ip, subnetId: inc.subnetId, x, y, allowed: !!peerAllowed[inc.id], services: inc.services || {}, host: !!(inc.host || (inc.services && Object.keys(inc.services).length > 0)), presharedKey: inc.presharedKey, publicKey: inc.publicKey })
                 }
             }
 

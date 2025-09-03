@@ -1,14 +1,19 @@
-# logger_api.py
 import logging
-from backend.core.color_logger import get_logger
+from backend.core.color_logger import get_logger, setup_logging
 
-class Logger:
-    def __init__(self, name: str = "vpn", level: int = logging.INFO):
-        self._log = get_logger(name, level)
+# Initialize once
+setup_logging()
+logger = get_logger()
 
-    def error(self, msg: str):   self._log.error(msg)
-    def info(self, msg: str):    self._log.info(msg)
-    def debug(self, msg: str):   self._log.debug(msg)
-    def warning(self, msg: str): self._log.warning(msg)
+# Expose functions for convenience
+def debug(msg: str, *args, **kwargs):
+    logger.debug(msg, *args, **kwargs)
 
-logger = Logger()
+def info(msg: str, *args, **kwargs):
+    logger.info(msg, *args, **kwargs)
+
+def warning(msg: str, *args, **kwargs):
+    logger.warning(msg, *args, **kwargs)
+
+def error(msg: str, *args, **kwargs):
+    logger.error(msg, *args, **kwargs)

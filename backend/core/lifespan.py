@@ -4,7 +4,7 @@ from backend.core.config import settings
 from backend.core.database import db
 from backend.core.iptables import allow_link, flush_iptables, default_policy_drop, allow_link_with_port
 from backend.core.logger import logging
-from backend.core.wireguard import apply_to_wg_config
+from backend.core.wireguard import apply_to_wg_config, flush_wireguard
 from backend.db.init_db import init_db
 
 @asynccontextmanager
@@ -18,8 +18,18 @@ async def lifespan(app: FastAPI):
         logging.error(f"Failed to initialize database: {e}")
         raise
     try:
-        logging.info("Resetting iptables rules for WireGuard")
+        apply_config_from_database()
+    except Exception as e:
+        logging.error(f"Failed to configure WireGuard on startup: {e}")
+        raise
+
+    yield  # control passes to the app here
+
+def apply_config_from_database():
+    try:
+        logging.info("Resetting iptables rules for WireGuard and WireGuard config...")
         flush_iptables()
+        flush_wireguard()
         subnets = db.get_subnets()
         for subnet in subnets:
             peers = db.get_peers_in_subnet(subnet)
@@ -45,9 +55,7 @@ async def lifespan(app: FastAPI):
 
         logging.info(f"Loaded {len(subnets)} subnets and {sum(len(db.get_peers_in_subnet(subnet)) for subnet in subnets)} peers from the database.")
 
-        logging.info("Loading and ")
+        logging.info("Loaded and applied WireGuard configuration from database")
     except Exception as e:
-        logging.error(f"Failed to configure WireGuard on startup: {e}")
-        raise
-
-    yield  # control passes to the app here
+        logging.error(f"Failed to apply WireGuard configuration: {e}")
+        raise e

@@ -4,13 +4,35 @@ from backend.core.models import Peer, Service
 from backend.core.config import settings
 from backend.core.logger import logging
 
-def apply_to_wg_config(peer: Peer|Service):
+
+def flush_wireguard():
+    """Remove all peers from the WireGuard interface."""
+    try:
+        output = subprocess.check_output(
+            ["wg", "show", settings.wg_interface, "peers"],
+            text=True
+        ).strip()
+        if not output:
+            logging.info("No peers to remove.")
+            return
+        for peer in output.split():
+            subprocess.run(
+                ["wg", "set", settings.wg_interface, "peer", peer, "remove"],
+                check=True
+            )
+        logging.info("All peers removed from %s", settings.wg_interface)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to flush peers: {e}")
+        raise HTTPException(status_code=500, detail="Failed to flush WireGuard peers")
+
+def apply_to_wg_config(peer: Peer):
     """Apply the peer configuration to the WireGuard interface."""
     with tempfile.NamedTemporaryFile(mode="w+",delete=False) as tmp_psk:
         tmp_psk.write(peer.preshared_key)
         tmp_psk.flush()
         tmp_psk_path = tmp_psk.name
     try:
+        print(f"Applying WireGuard config for peer: {peer}")
         subprocess.run([
             "wg", "set", settings.wg_interface,
             "peer", peer.public_key,
@@ -19,11 +41,11 @@ def apply_to_wg_config(peer: Peer|Service):
         ], check=True)
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to apply peer config: {e}")
-        raise HTTPException(status_code=500, detail="Failed to apply peer configuration")
+        raise HTTPException(status_code=500, detail=f"Failed to apply peer configuration for {peer}")
     finally:
         os.unlink(tmp_psk_path)
 
-def remove_from_wg_config(peer: Peer|Service):
+def remove_from_wg_config(peer: Peer):
     try:
         subprocess.run([
                     "wg", "set", settings.wg_interface,
@@ -45,7 +67,7 @@ def generate_keys():
         print(f"Key generation failed: {e}")
         return None
     
-def generate_wg_config(peer: Peer|Service,private_key:str)->str:
+def generate_wg_config(peer: Peer,private_key:str)->str:
     """Generate the WireGuard configuration for a peer."""
     config = f"""
 [Interface]

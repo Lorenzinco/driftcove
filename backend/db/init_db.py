@@ -16,7 +16,7 @@ def init_db(db_path):
     cursor.execute("""
     INSERT OR IGNORE INTO subnets (subnet, name, description, x, y, width, height)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (settings.wg_default_subnet, "Wireguard Subnet", "This is the subnet for the WireGuard configuration.", 0, 0, 100, 100))
+    """, (settings.wg_default_subnet, "Wireguard Subnet", "This is the subnet for the WireGuard configuration.", 300, 300, 300, 300))
 
     # fetch for the master peer 
     cursor.execute("SELECT * FROM peers WHERE username = ?", ("master",))
@@ -29,7 +29,7 @@ def init_db(db_path):
         cursor.execute("""
         INSERT INTO peers (username, address, public_key, preshared_key, x, y)
         VALUES (?, ?, ?, ?, ?, ?)
-        """, ("master", first_ip, settings.public_key, PRESHARED_KEY, 0, 0))
+        """, ("master", first_ip, settings.public_key, PRESHARED_KEY, 300, 300))
 
         cursor.execute("""
                     INSERT OR IGNORE INTO peers_subnets (peer_id, subnet)

@@ -6,8 +6,8 @@
             <v-img src="@/assets/logo.png" alt="Application Logo" class="w-25" />
             <v-btn :variant="store.tool==='select' ? 'elevated' : 'tonal'" @click="store.tool='select'" prepend-icon="mdi-cursor-default">Select</v-btn>
             <v-btn :variant="store.tool==='connect' ? 'elevated' : 'tonal'" @click="store.tool='connect'" prepend-icon="mdi-connection">Connect</v-btn>
+            <v-btn :variant="store.tool==='cut' ? 'elevated' : 'tonal'" @click="store.tool='cut'" prepend-icon="mdi-content-cut">Cut</v-btn>
             <v-divider vertical class="mx-2" />
-            <v-btn :variant="store.tool==='add-peer' ? 'elevated' : 'tonal'" @click="store.tool='add-peer'" prepend-icon="mdi-lan-connect">Peer</v-btn>
             <v-btn :variant="store.tool==='add-subnet' ? 'elevated' : 'tonal'" @click="store.tool='add-subnet'" prepend-icon="mdi-lan">Subnet</v-btn>
             <v-switch v-model="store.grid" inset hide-details label="Grid" class="ma-0 pa-0 switch-inline" style="min-width:auto;" />
         </div>

@@ -1,6 +1,7 @@
 # color_logger.py
 import logging
 import sys
+import os
 
 RESET = "\033[0m"
 LEVEL_COLORS = {
@@ -14,19 +15,49 @@ LEVEL_COLORS = {
 class ColorFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         color = LEVEL_COLORS.get(record.levelno, "\033[90m")
-        # Put the colored [LEVEL] in a custom field the format string can use
         record.levelprefix = f"{color}[{record.levelname}]{RESET}"
+        # Shorten overly long module names
+        record.modpath = f"{record.name}" if len(record.name) < 25 else record.name[-25:]
         return super().format(record)
 
-def get_logger(name: str = "vpn", level: int = logging.INFO) -> logging.Logger:
-    logging.basicConfig(level=logging.INFO,force=True)
+DEFAULT_FORMAT = "%(levelprefix)s %(modpath)s: %(message)s"
+
+def get_logger(name: str = "driftcove", level: int = logging.INFO) -> logging.Logger:
     logger = logging.getLogger(name)
+    if logger.handlers:
+        # Already configured
+        return logger
     logger.setLevel(level)
-    logger.propagate = False  # <- prevents double printing via root logger
-
-    if not logger.handlers:   # <- don't add a second handler on reloads
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(ColorFormatter("%(levelprefix)s: %(message)s"))
-        logger.addHandler(handler)
-
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(ColorFormatter(DEFAULT_FORMAT))
+    logger.addHandler(handler)
+    logger.propagate = False
     return logger
+
+def configure_uvicorn_logging():
+    """Replace Uvicorn's default formatters with our ColorFormatter to avoid duplicate & uncolored output."""
+    target_names = [
+        "uvicorn",
+        "uvicorn.error",
+        "uvicorn.access",
+    ]
+    for name in target_names:
+        lg = logging.getLogger(name)
+        for h in list(lg.handlers):
+            # Replace formatter with colored one
+            h.setFormatter(ColorFormatter(DEFAULT_FORMAT))
+        # Avoid propagating into root (prevents double print)
+        lg.propagate = False
+
+def setup_logging(level: int = logging.INFO):
+    root = logging.getLogger()
+    # Drop existing handlers (only if they look like default StreamHandlers without our formatter)
+    for h in list(root.handlers):
+        root.removeHandler(h)
+    root.setLevel(level)
+    # Add colored root (for 3rd party libs too)
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setFormatter(ColorFormatter(DEFAULT_FORMAT))
+    root.addHandler(sh)
+    configure_uvicorn_logging()
+    return get_logger(level=level)

@@ -9,6 +9,16 @@ class Database:
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.cursor = self.conn.cursor()
 
+    def clear_database(self):
+        """
+        This function clears the entire database.
+        """
+        try:
+            self.cursor.execute("DELETE FROM subnets")
+            self.cursor.execute("DELETE FROM peers")
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while clearing database: {e}")
+
     def begin_transaction(self):
         """
         This function initiates a transaction, which is used to ensure that the database operations are atomic.
@@ -80,6 +90,10 @@ class Database:
             peers_rows = self.cursor.fetchall()
             for row in peers_rows:
                 peers.append(Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5]))
+            for peer in peers:
+                hosted_services = self.get_hosted_services(peer)
+                peer.services.update({service.name: service for service in hosted_services})
+
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting all peers: {e}")
         return peers
@@ -186,8 +200,11 @@ class Database:
             """, (username,))
             row = self.cursor.fetchone()
             if row:
-                return Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5])
-            
+                peer = Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5])
+                hosted_services = self.get_services_by_host(peer)
+                peer.services.update({service.name: service for service in hosted_services})
+                return peer
+
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting peer by username: {e}")
         return None
@@ -303,17 +320,18 @@ class Database:
         peers = []
         try:
             self.cursor.execute("""
-                SELECT p.username, p.public_key, p.preshared_key, p.address, p.x, p.y
-                FROM peers p
-                LEFT JOIN services s ON p.id = s.id
-                WHERE s.id IS NULL
+                SELECT username, public_key, preshared_key, address, x, y
+                FROM peers
             """)
             peers_rows = self.cursor.fetchall()
             for row in peers_rows:
+                peer = Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5])
                 address = row[3]
                 address_ip = ipaddress.ip_address(address)
                 if address_ip in ipaddress.ip_network(subnet.subnet, strict=False):
-                    peers.append(Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5]))
+                    hosted_services = self.get_services_by_host(peer)
+                    peer.services.update({service.name: service for service in hosted_services})
+                    peers.append(peer)
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting peers in subnet: {e}")
         return peers
@@ -335,7 +353,9 @@ class Database:
                 address = row[3]
                 address_ip = ipaddress.ip_address(address)
                 if address_ip in ipaddress.ip_network(subnet.subnet, strict=False):
-                    services.append(Service(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5], name=row[6], department=row[7], port=row[8]))
+                    host = Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5])
+                    hosted_services = self.get_services_by_host(host)
+                    services.extend(hosted_services)
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting services in subnet: {e}")
         return services
@@ -359,27 +379,31 @@ class Database:
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting peers linked to subnet: {e}")
         return peers
-    
-    def create_service(self, service: Service):
+
+    def create_service(self, peer: Peer, service: Service):
+        """
+        Adds a service to the peer's hosted services
+        """
         try:
-            # check that the peer corrisponding to this service exists
+            # Check that the peer exists
             self.cursor.execute("""
                 SELECT id FROM peers WHERE public_key = ?
-            """, (service.public_key,))
+            """, (peer.public_key,))
             row = self.cursor.fetchone()
             if row is None:
                 raise Exception("Peer not found, to create a service you must first create a peer and then link the service to the peer.")
+            peer_id = row[0]
 
             # Insert into services table using the same ID
             self.cursor.execute("""
-                INSERT INTO services (id, name, department, port)
-                VALUES (?, ?, ?, ?)
-            """, (row[0], service.name, service.department, service.port))
+                INSERT INTO services (id, name, department, port, description)
+                VALUES (?, ?, ?, ?, ?)
+            """, (peer_id, service.name, service.department, service.port, service.description))
 
-            return row[0]
+            return service.name
 
         except sqlite3.Error as e:
-            raise Exception(f"Failed to create service: {e}")
+            raise Exception(f"Database error, {e}")
         
     def add_peer_service_link(self, peer: Peer, service: Service):
         """
@@ -388,10 +412,10 @@ class Database:
         """
         try:
             self.cursor.execute("""
-                INSERT INTO peers_services (peer_id, service_id)
-                VALUES ((SELECT id FROM peers WHERE public_key = ?), (SELECT id FROM services WHERE name = ?))
-                ON CONFLICT(peer_id, service_id) DO NOTHING
-            """, (peer.public_key, service.name))
+                INSERT INTO peers_services (peer_id, service_id, service_port)
+                VALUES ((SELECT id FROM peers WHERE public_key = ?), (SELECT id FROM services WHERE name = ?), ?)
+                ON CONFLICT(peer_id, service_id, service_port) DO NOTHING
+            """, (peer.public_key, service.name, service.port))
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while adding link from peer to service: {e}")
 
@@ -402,20 +426,19 @@ class Database:
         """
         try:
             self.cursor.execute("""
-                DELETE FROM peers_services WHERE peer_id = (SELECT id FROM peers WHERE public_key = ?) AND service_id = (SELECT id FROM services WHERE name = ?)
-            """, (peer.public_key, service.name))
+                DELETE FROM peers_services WHERE peer_id = (SELECT id FROM peers WHERE public_key = ?) AND service_id = (SELECT id FROM services WHERE name = ?) AND service_port = ?
+            """, (peer.public_key, service.name, service.port))
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while removing link from peer to service: {e}")
 
     def delete_service(self, service: Service):
         """
         This function deletes a service from the database.
-        It will delete the entry in the services table and the corresponding peer in the peers table.
         """
         try:
             self.cursor.execute("""
-                DELETE FROM peers WHERE public_key = ?
-            """, (service.public_key,))
+                DELETE FROM services WHERE name = ? AND port = ?
+            """, (service.name, service.port))
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while deleting service: {e}")
 
@@ -427,7 +450,7 @@ class Database:
         services = []
         try:
             self.cursor.execute("""
-                SELECT s.name, s.department, s.port, p.public_key, p.preshared_key, p.address, p.x, p.y
+                SELECT s.name, s.department, s.description, s.port
                 FROM services s
                 JOIN peers_services ps ON s.id = ps.service_id
                 JOIN peers p ON ps.peer_id = p.id
@@ -435,7 +458,7 @@ class Database:
             """, (peer.public_key,))
             services_rows = self.cursor.fetchall()
             for row in services_rows:
-                services.append(Service(username=peer.username, public_key=row[3], preshared_key=row[4], address=row[5], x=row[6], y=row[7], name=row[0], department=row[1], port=row[2]))
+                services.append(Service(name=row[0], department=row[1], description=row[2], port=row[3]))
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting peer's services: {e}")
         return services
@@ -449,13 +472,12 @@ class Database:
         services = []
         try:
             self.cursor.execute("""
-                SELECT p.username, p.public_key, p.preshared_key, p.address, p.x, p.y, s.name, s.department, s.port
-                FROM peers p
-                JOIN services s ON p.id = s.id
+                SELECT name, department, port, description
+                FROM Services
             """)
             services_rows = self.cursor.fetchall()
             for row in services_rows:
-                services.append(Service(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5], name=row[6], department=row[7], port=row[8]))
+                services.append(Service(name=row[0], department=row[1], port=row[2], description=row[3]))
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting all services: {e}")
         return services
@@ -467,18 +489,36 @@ class Database:
         """
         try:
             self.cursor.execute("""
-                SELECT p.username, p.public_key, p.preshared_key, p.address, p.x, p.y, s.name, s.department, s.port
-                FROM peers p
-                JOIN services s ON p.id = s.id
-                WHERE s.name = ?
+                SELECT name, department, port, description
+                FROM Services
+                WHERE name = ?
             """, (name,))
             row = self.cursor.fetchone()
             if row:
-                return Service(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5], name=row[6], department=row[7], port=row[8])
+                return Service(name=row[0], department=row[1], port=row[2], description=row[3])
 
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting service by name: {e}")
         return None
+    
+    def get_services_by_host(self, peer:Peer) -> list[Service]:
+        """
+        This function returns a list of services that the peer is hosting, empty list if none
+        """
+        services = []
+        try:
+            self.cursor.execute("""
+                SELECT s.name, s.department, s.port, s.description
+                FROM services s
+                JOIN peers p ON s.id = p.id
+                WHERE p.public_key = ?
+            """, (peer.public_key,))
+            services_rows = self.cursor.fetchall()
+            for row in services_rows:
+                services.append(Service(name=row[0], department=row[1], port=row[2], description=row[3]))
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while getting services by host: {e}")
+        return services
 
     def get_service_peers(self, service: Service) -> list[Peer]:
         """
@@ -509,7 +549,7 @@ class Database:
         services = []
         try:
             self.cursor.execute("""
-                SELECT s.name, s.department, s.port, p.public_key, p.preshared_key, p.address, p.x, p.y
+                SELECT s.name, s.department, s.port, s.description
                 FROM services s
                 JOIN peers_services ps ON s.id = ps.service_id
                 JOIN peers p ON ps.peer_id = p.id
@@ -517,7 +557,7 @@ class Database:
             """, (peer.public_key,))
             services_rows = self.cursor.fetchall()
             for row in services_rows:
-                services.append(Service(username=peer.username, public_key=row[3], preshared_key=row[4], address=row[5], x=row[6], y=row[7], name=row[0], department=row[1], port=row[2]))
+                services.append(Service(name=row[0], department=row[1], port=row[2], description=row[3]))
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting peer's services: {e}")
         return services
@@ -576,7 +616,7 @@ class Database:
         links = []
         try:
             self.cursor.execute("""
-                SELECT p.username, p.public_key, p.preshared_key, p.address, p.x, p.y, s.name, s.department, s.port
+                SELECT p.username, p.public_key, p.preshared_key, p.address, p.x, p.y, s.name, s.department, s.port, s.description
                 FROM peers_services ps
                 JOIN peers p ON ps.peer_id = p.id
                 JOIN services s ON ps.service_id = s.id
@@ -584,7 +624,7 @@ class Database:
             links_rows = self.cursor.fetchall()
             for row in links_rows:
                 peer = Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5])
-                service = Service(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5], name=row[6], department=row[7], port=row[8])
+                service = Service(name=row[6], department=row[7], port=row[8], description=row[9])
                 links.append((peer, service))
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting links between peers and services: {e}")
