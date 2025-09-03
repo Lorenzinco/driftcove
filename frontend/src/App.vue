@@ -1,9 +1,8 @@
 <template>
-  <v-app>
-    <router-view />
-  </v-app>
+  <Driftcove />
 </template>
 
-<script lang="ts" setup>
-  //
+
+<script setup lang="ts">
+  import Driftcove from '@/layouts/driftcove.vue';
 </script>

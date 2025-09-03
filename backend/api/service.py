@@ -4,7 +4,7 @@ from backend.core.config import verify_token, settings
 from backend.core.lock import lock
 from backend.core.state_manager import state_manager
 from backend.core.database import db
-from backend.core.iptables import allow_link, remove_link
+from backend.core.iptables import remove_link_with_port, allow_link_with_port
 from backend.core.models import Service
 from backend.core.logger import logging
 from typing import Annotated
@@ -13,11 +13,11 @@ router = APIRouter(tags=["service"])
 
 
 @router.post("/create",tags=["service"])
-def create_service(service_name:str, department:str, subnet:str, _: Annotated[str, Depends(verify_token)]):
+def create_service(service_name:str, department:str, username:str, port:int, _: Annotated[str, Depends(verify_token)]):
     """
-    Creates a service, adds it to the wireguard configuration of the server and returns a config, the assigned ip address is an avaliable one inside the provided subnet. If the service already exists, destroys the previous service and creates another one, then returns a config.
-    The service after the creation cannot really connect to anything, it needs to be "added" to a subnet, which really just enables routes to that subnet for that service.
+    Creates a service, pairs it with an existing peer, the peer in question is identified by the address, the service will be created with the provided port. If the service already exists, nothing happens.
     If you wish for selected peers to be able to connect to the service, you need to use the connect endpoint.
+    If a peer is connected to a peer with the same address, it will automatically be able to connect to the service.
     """
     keys = generate_keys()
     with lock.write_lock(), state_manager.saved_state():
@@ -26,29 +26,28 @@ def create_service(service_name:str, department:str, subnet:str, _: Annotated[st
         try:
             # If the peer already exists, we remove it first
             if old_service:
-                db.remove_peer(old_service)
-            subnet = db.get_subnet_by_address(subnet)
+                return {"message": "Service already exists"}
+            peer = db.get_peer_by_username(username)
+            if peer is None:
+                raise HTTPException(status_code=404, detail=f"Peer {username} does not exist, to create a service, first create the peer and the assign the service to it.")
+            subnet = db.get_peers_subnet(peer)
             if subnet is None:
-                raise HTTPException(status_code=404, detail="Subnet not found")
-            address = db.get_avaliable_ip(subnet)
-            if address is None:
-                raise HTTPException(status_code=500, detail="No available IPs in subnet")
-            username = db.get_avaliable_username_for_service()
+                raise HTTPException(status_code=404, detail="Peer is in a subnet that does not exist")
             service = Service(username=username,
-                            public_key=keys["public_key"],
-                            preshared_key=keys["preshared_key"],
-                            address=address,
-                            name=service_name, 
-                            department=department)
+                            public_key=peer.public_key,
+                            preshared_key=peer.preshared_key,
+                            address=peer.address,
+                            name=service_name,
+                            x=peer.x,
+                            y=peer.y,
+                            department=department,
+                            port=port)
             db.create_service(service)
-            if old_service:
-                remove_from_wg_config(old_service)
             apply_to_wg_config(service)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to create service: {e}")
             
-    configuration = generate_wg_config(service, keys["private_key"])
-    return {"configuration": configuration}
+    return {"message": "Service created successfully"}
 
 @router.delete("/delete",tags=["service"])
 def delete_service(service_name: str, _: Annotated[str, Depends(verify_token)]):
@@ -66,7 +65,7 @@ def delete_service(service_name: str, _: Annotated[str, Depends(verify_token)]):
             # Remove the service from the allowed IPs of the peers
             for peer in peers_linked:
                 logging.info(f"Removing service {service.name} from peer {peer.username}")
-                remove_link(peer.address, service.address)
+                remove_link_with_port(peer.address, service.address)
                 db.remove_peer_service_link(peer, service)
             logging.info(f"Removing service {service.name} from the database")
             db.delete_service(service)
@@ -93,8 +92,8 @@ def service_connect(username: str, service_name: str, _: Annotated[str, Depends(
             
             db.add_peer_service_link(peer, service)
             logging.info(f"Connecting peer {peer.username} to service {service.name}")
-            allow_link(peer.address, service.address)
-    
+            allow_link_with_port(peer.address, service.address, service.port)
+
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Connecting peer {username} to {service_name} failed: {e}")
     return {"message": f"Peer {username} connected to service {service.name}"}
@@ -116,7 +115,7 @@ def service_disconnect(username: str, service_name: str, _: Annotated[str, Depen
                 raise HTTPException(status_code=404, detail="Service not found")
             
             logging.info(f"Disconnecting peer {peer.username} from service {service.name}")
-            remove_link(peer.address, service.address)
+            remove_link_with_port(peer.address, service.address, service.port)
             db.remove_peer_service_link(peer, service)
     
         except Exception as e:

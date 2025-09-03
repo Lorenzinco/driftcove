@@ -1,0 +1,3 @@
+# Backend:
+    - Check if the service being assigned to a peer already exists properly (by port)
+    

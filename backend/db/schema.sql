@@ -7,7 +7,9 @@ CREATE TABLE IF NOT EXISTS peers (
     address TEXT NOT NULL UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     public_key TEXT NOT NULL UNIQUE,
-    preshared_key TEXT
+    preshared_key TEXT,
+    x FLOAT,
+    y FLOAT
 );
 
         
@@ -15,6 +17,7 @@ CREATE TABLE IF NOT EXISTS services (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     department TEXT,
+    port INTEGER NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (id) REFERENCES peers(id) ON DELETE CASCADE
 );
@@ -24,7 +27,11 @@ CREATE TABLE IF NOT EXISTS subnets(
     subnet TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    description TEXT
+    description TEXT,
+    x FLOAT,
+    y FLOAT,
+    width FLOAT,
+    height FLOAT
 );
 
     

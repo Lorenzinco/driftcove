@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
+from backend.core.state_manager import state_manager
 from backend.core.config import verify_token
 from backend.core.lock import lock
 from backend.core.database import db
@@ -20,7 +21,8 @@ def get_subnets(_: Annotated[str, Depends(verify_token)]):
         logging.info(f"Retrieved {len(subnets)} subnets from the database.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
-    return {subnets}
+    logging.debug(f"Subnets: {subnets}")
+    return {"subnets":subnets}
 
     
 @router.get("/topology",tags=["network"])
@@ -36,6 +38,8 @@ def get_topology(_: Annotated[str, Depends(verify_token)])->dict:
             for subnet in subnets:
                 peers = db.get_peers_in_subnet(subnet)
                 services = db.get_services_in_subnet(subnet)
+                # remove from the peers list all the peers that are also services
+                peers = [peer for peer in peers if peer not in services]
                 topology.append({subnet.subnet:peers})
                 peers_linked = db.get_peers_linked_to_subnet(subnet)
                 for peer in peers_linked:
@@ -53,6 +57,23 @@ def get_topology(_: Annotated[str, Depends(verify_token)])->dict:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
     return {"networks":topology, "links": links}
+
+@router.post("/topology",tags=["network"])
+def upload_topology(topology: dict, _: Annotated[str, Depends(verify_token)]):
+    """
+    Upload a new network topology. If any of the peers inside the topology do not exist, an error will be returned, if any of the peer inside the topology have invalid addresses an error will be returned.
+    """
+    try:
+        # first check if all peers exist
+        for peer in topology.get("peers", []):
+            if db.get_peer_by_username(peer["username"]) is None:
+                raise HTTPException(status_code=404, detail=f"Peer not found: {peer['username']}")
+
+        with lock.write_lock(), state_manager.saved_state():
+            db.set_topology(topology)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Topology upload failed: {e}")
+    return {"message": "Topology uploaded successfully"}
 
 @router.get("/status",tags=["network"])
 def status():

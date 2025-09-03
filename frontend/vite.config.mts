@@ -84,6 +84,19 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    proxy: {
+      // Proxy backend API (FastAPI @ localhost:8000) while keeping relative requests in code
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        headers: {"Authorization": "Bearer supersecuretoken"},
+        rewrite: (path) => path.replace(/^\/api/, ''),
+        // Optionally enable if backend sets different host headers or uses cookies
+        // secure: false,
+        // Rewrite not needed since path prefix matches; keep for clarity
+        // rewrite: (path) => path,
+      },
+    },
   },
   css: {
     preprocessorOptions: {

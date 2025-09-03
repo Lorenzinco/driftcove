@@ -12,10 +12,10 @@ from typing import Annotated
 router = APIRouter(tags=["peer"])
 
 @router.post("/create",tags=["peer"])
-def create_peer(username:str , subnet:str, _: Annotated[str, Depends(verify_token)]):
+def create_peer(username:str , subnet:str, address:str|None, _: Annotated[str, Depends(verify_token)]):
     """
-    Creates a peer and adds it to the wireguard configuration and returns a config, the assigned ip address is one inside the provided subnet. If the peer already exists, destroys the previous peer and creates another one, then returns a config.
-    The peer after the creation cannot really connect to anything, it needs to be "added" to a subnet, which really just enables routes to that subnet for that peer.
+    Creates a peer and adds it to the wireguard configuration and returns a config, you can specify the address you want to assign to the peer or an automatic address will be found, if somebody already has that address or it is not in the address space of the subnet an error throws. The assigned ip address is one inside the provided subnet. If the peer already exists, destroys the previous peer and creates another one, then returns a config.
+    The peer after the creation cannot connect to anything, it needs to be "added" to a subnet, which really just enables routes to that subnet for that peer.
     If you wish for selected peers to be able to connect to the peer, you need to use the connect endpoint.
     """
 
@@ -30,10 +30,19 @@ def create_peer(username:str , subnet:str, _: Annotated[str, Depends(verify_toke
             subnet = db.get_subnet_by_address(subnet)
             if subnet is None:
                 raise HTTPException(status_code=404, detail="Subnet not found")
-            address = db.get_avaliable_ip(subnet)
+            if address is not None:
+                if not db.is_ip_already_assigned(address) and db.is_ip_in_subnet(address, subnet):
+                    raise HTTPException(status_code=400, detail="IP address is already assigned")
+            else:
+                address = db.get_avaliable_ip(subnet)
+            # if an address is not found by dhcp then it is none, no repetition here
             if address is None:
                 raise HTTPException(status_code=500, detail="No available IPs in subnet")
-            peer = Peer(username=username, public_key=keys["public_key"], preshared_key=keys["preshared_key"], address=address)
+            # on creation put the peer in the middle of the subnet
+            peer_x = subnet.x + subnet.width / 2
+            peer_y = subnet.y + subnet.height / 2
+
+            peer = Peer(username=username, public_key=keys["public_key"], preshared_key=keys["preshared_key"], address=address, x=peer_x, y=peer_y)
             logging.info(f"Adding peer {peer} to the database")
             db.create_peer(peer)
             # if the peer already exists, we remove it first
@@ -60,8 +69,8 @@ def get_peer_info(username: str, _: Annotated[str, Depends(verify_token)]):
             peer = db.get_peer_by_username(username)
             if peer is None:
                 raise HTTPException(status_code=404, detail="Peer not found")
-        
-        return {"username": peer.username, "public_key": peer.public_key, "address": peer.address, "preshared_key": peer.preshared_key}
+
+        return {"username": peer.username, "public_key": peer.public_key, "address": peer.address, "preshared_key": peer.preshared_key, "x": peer.x, "y": peer.y}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
 

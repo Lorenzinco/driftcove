@@ -14,9 +14,9 @@ def init_db(db_path):
     PRESHARED_KEY = os.getenv("PRESHARED_KEY", "X2RHVZ+j12IDqxq8HaKOp77+MRprFo7XxO8LrE9BhxE=")
 
     cursor.execute("""
-    INSERT OR IGNORE INTO subnets (subnet, name, description)
-    VALUES (?, ?, ?)
-    """, (settings.wg_default_subnet, "Wireguard Subnet", "This is the subnet for the WireGuard configuration."))
+    INSERT OR IGNORE INTO subnets (subnet, name, description, x, y, width, height)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (settings.wg_default_subnet, "Wireguard Subnet", "This is the subnet for the WireGuard configuration.", 0, 0, 100, 100))
 
     # fetch for the master peer 
     cursor.execute("SELECT * FROM peers WHERE username = ?", ("master",))
@@ -27,9 +27,9 @@ def init_db(db_path):
         first_ip = str(next(net.hosts()))
         # if the master peer does not exist, create it
         cursor.execute("""
-        INSERT INTO peers (username, address, public_key, preshared_key)
-        VALUES (?, ?, ?, ?)
-        """, ("master", first_ip, settings.public_key, PRESHARED_KEY))
+        INSERT INTO peers (username, address, public_key, preshared_key, x, y)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """, ("master", first_ip, settings.public_key, PRESHARED_KEY, 0, 0))
 
         cursor.execute("""
                     INSERT OR IGNORE INTO peers_subnets (peer_id, subnet)

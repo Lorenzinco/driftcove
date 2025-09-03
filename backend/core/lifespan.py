@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from backend.core.config import settings
 from backend.core.database import db
-from backend.core.iptables import allow_link, flush_iptables, default_policy_drop
+from backend.core.iptables import allow_link, flush_iptables, default_policy_drop, allow_link_with_port
 from backend.core.logger import logging
 from backend.core.wireguard import apply_to_wg_config
 from backend.db.init_db import init_db
@@ -20,7 +20,6 @@ async def lifespan(app: FastAPI):
     try:
         logging.info("Resetting iptables rules for WireGuard")
         flush_iptables()
-
         subnets = db.get_subnets()
         for subnet in subnets:
             peers = db.get_peers_in_subnet(subnet)
@@ -33,6 +32,12 @@ async def lifespan(app: FastAPI):
         links = db.get_links_between_peers()
         for link in links:
             allow_link(link[0],link[1])
+            allow_link(link[1],link[0])
+
+        logging.info("Loading from db service to peer links")
+        service_links = db.get_links_between_peers_and_services()
+        for link in service_links:
+            allow_link_with_port(link[0],link[1],link[1].port)
             allow_link(link[1],link[0])
 
         logging.info("Every non-allowed traffic will be dropped")
