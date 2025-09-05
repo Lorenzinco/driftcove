@@ -180,7 +180,7 @@ def connect_two_peers(peer1_username:str, peer2_username:str, _: Annotated[str, 
             allow_link(peer2_obj.address, peer1_obj.address)
             db.add_link_between_two_peers(peer1_obj, peer2_obj)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Connecting the two peers failed: {e}")
     return {"message": f"Peers {peer1_username} and {peer2_username} connected"}
         
 @router.delete("/disconnect",tags=["peer"])
@@ -199,5 +199,5 @@ def disconnect_two_peers(peer1_username:str, peer2_username:str, _: Annotated[st
             remove_link(peer2_obj.address, peer1_obj.address)
             db.remove_link_between_two_peers(peer1_obj, peer2_obj)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Disconnecting the two peers failed: {e}")
     return {"message": f"Peers {peer1_username} and {peer2_username} disconnected"}

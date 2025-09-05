@@ -350,7 +350,8 @@ class Database:
                 if address_ip in ipaddress.ip_network(subnet.subnet, strict=False):
                     hosted_services = self.get_services_by_host(peer)
                     peer.services.update({service.name: service for service in hosted_services})
-                    peers.append(peer)
+                    if peer not in peers:
+                        peers.append(peer)
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting peers in subnet: {e}")
         return peers
@@ -615,13 +616,14 @@ class Database:
 
     def remove_link_between_two_peers(self, peer1: Peer, peer2: Peer):
         """
-        This function removes a link between two peers.
-        It will delete the entry in the links table.
+        Remove an undirected link between two peers (order-agnostic).
         """
         try:
             self.cursor.execute("""
-                DELETE FROM peers_peers WHERE peer_one_id = (SELECT id FROM peers WHERE public_key = ?) AND peer_two_id = (SELECT id FROM peers WHERE public_key = ?)
-            """, (peer1.public_key, peer2.public_key))
+                DELETE FROM peers_peers 
+                WHERE (peer_one_id = (SELECT id FROM peers WHERE public_key = ?) AND peer_two_id = (SELECT id FROM peers WHERE public_key = ?))
+                   OR (peer_one_id = (SELECT id FROM peers WHERE public_key = ?) AND peer_two_id = (SELECT id FROM peers WHERE public_key = ?))
+            """, (peer1.public_key, peer2.public_key, peer2.public_key, peer1.public_key))
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while removing link between peers: {e}")
 
@@ -639,6 +641,7 @@ class Database:
                 JOIN peers p2 ON pp.peer_two_id = p2.id
             """)
             links_rows = self.cursor.fetchall()
+            logging.info(f"Links rows: {links_rows}")
             for row in links_rows:
                 peer1 = Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5])
                 peer2 = Peer(username=row[6], public_key=row[7], preshared_key=row[8], address=row[9], x=row[10], y=row[11])

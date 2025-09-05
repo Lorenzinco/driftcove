@@ -93,7 +93,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
 
   function drawLinks(ctx:CanvasRenderingContext2D, ts:number){
   const { links, peers, ui } = deps();
-    frame += (ts - lastTs) * 0.06; lastTs = ts;
+  // frame increment moved to draw() so all passes share same timing
     interface Agg { a: Peer; b: Peer; p2p: boolean; services: Set<string>; serviceHostId?: string; linkIds: string[]; repId: string }
     const byPair: Record<string, Agg> = {};
     function pairKey(aId:string,bId:string){ return aId < bId ? `${aId}::${bId}` : `${bId}::${aId}`; }
@@ -151,6 +151,71 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       }
     }
     ctx.restore(); if (anyAnim && invalidateFn) requestAnimationFrame(()=> invalidateFn && invalidateFn());
+  }
+
+  function drawMembershipLinks(ctx:CanvasRenderingContext2D){
+    const { links, peers, subnets, ui } = deps();
+    let anyAnim = false;
+    for (const l of links){
+      if ((l as any).kind !== 'membership') continue;
+      // Expect l.fromId = peerId, l.toId = subnetId; tolerate reversed
+      let peer = peers.find(p=> p.id===l.fromId);
+      let subnet = subnets.find(s=> s.id===l.toId);
+      if (!peer || !subnet){
+        peer = peers.find(p=> p.id===l.toId) || peer;
+        subnet = subnets.find(s=> s.id===l.fromId) || subnet;
+      }
+      if (!peer || !subnet) continue;
+      // Do not draw membership links to the peer's own containing subnet
+      if ((peer as any).subnetId && (peer as any).subnetId === subnet.id) continue;
+      const A = toScreen(peer.x, peer.y);
+      // Compute boundary point B on subnet rectangle along ray from center->peer
+      const cx = subnet.x, cy = subnet.y; const hw = subnet.width/2, hh = subnet.height/2;
+      const vx = peer.x - cx, vy = peer.y - cy;
+      let Bx = cx, By = cy;
+      if (vx === 0 && vy === 0){ Bx = cx + hw; By = cy; }
+      else {
+        const sx = Math.abs(vx) / (hw || 1e-6);
+        const sy = Math.abs(vy) / (hh || 1e-6);
+        const t = Math.max(sx, sy) || 1; // scale to border
+        Bx = cx + vx / t; By = cy + vy / t;
+      }
+      const B = toScreen(Bx, By);
+      // Color from subnet rgba
+      let strokeStyle = '#7CF29A';
+      const raw = (subnet as any).rgba;
+      if (typeof raw === 'number'){
+        const r = (raw >> 24) & 0xFF; const g = (raw >> 16) & 0xFF; const b = (raw >> 8) & 0xFF;
+        strokeStyle = `rgba(${r},${g},${b},1)`;
+      }
+      const active = (ui?.hoverPeerId === peer.id) || (ui?.hoverSubnetId === subnet.id) || (ui?.hoverLinkId === (l as any).id);
+      ctx.save();
+      ctx.strokeStyle = strokeStyle;
+      ctx.lineWidth = 2;
+      // Match subnet dash pattern
+      ctx.setLineDash([8, 6]);
+      // Much slower sliding animation
+      ctx.lineDashOffset = active ? -(frame * 0.50) : 0;
+      ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+      ctx.restore();
+      if (active) anyAnim = true;
+
+  // Hover overlay: show when hovering the link or either endpoint (peer/subnet)
+  if (active) {
+        const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
+        const label = 'subnet guest';
+        ctx.save();
+        ctx.font = '600 12px Roboto, sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        const padX=8, padY=6; const textW = ctx.measureText(label).width; const boxW = textW + padX*2; const boxH = 14 + padY*2;
+        ctx.beginPath(); (ctx as any).roundRect?.(mx - boxW/2, my - boxH/2, boxW, boxH, 5);
+        ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fill();
+        ctx.strokeStyle = strokeStyle; ctx.lineWidth = 1; ctx.stroke();
+        ctx.fillStyle = '#fff'; ctx.fillText(label, mx, my);
+        ctx.restore();
+      }
+    }
+    if (anyAnim && invalidateFn) requestAnimationFrame(()=> invalidateFn && invalidateFn());
   }
 
   function drawPeers(ctx:CanvasRenderingContext2D){
@@ -311,7 +376,13 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   function drawHoverSubnetGhost(_ctx:CanvasRenderingContext2D){ /* intentionally blank */ }
 
   function drawGhostConnect(ctx:CanvasRenderingContext2D){
-    const { ui, peers, panzoom } = deps(); const connect = ui?.connect; if (!(connect && connect.fromPeerId && connect.ghostTo)) return; const a = peers.find(p=>p.id===connect.fromPeerId); if (!a) return; const A = toScreen(a.x,a.y); const B = toScreen(connect.ghostTo.x, connect.ghostTo.y); ctx.save(); ctx.setLineDash([6,4]); ctx.strokeStyle='#FFFFFF'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke(); ctx.restore(); }
+    const { ui, peers, subnets } = deps() as any; const connect = ui?.connect; if (!(connect && connect.ghostTo)) return;
+    let originX:number|undefined, originY:number|undefined;
+    if (connect.fromPeerId){ const a = peers.find((p: any)=>p.id===connect.fromPeerId); if (a){ originX=a.x; originY=a.y; } }
+    else if ((connect as any).fromSubnetId){ const s = subnets.find((ss:any)=> ss.id===(connect as any).fromSubnetId); if (s){ originX=s.x; originY=s.y; } }
+    if (originX===undefined || originY===undefined) return;
+    const A = toScreen(originX,originY); const B = toScreen(connect.ghostTo.x, connect.ghostTo.y);
+    ctx.save(); ctx.setLineDash([6,4]); ctx.strokeStyle='#FFFFFF'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke(); ctx.restore(); }
 
   function drawGhostSubnet(ctx:CanvasRenderingContext2D){
     const { ui, panzoom } = deps(); const g = ui?.ghostSubnet; if (!(g && g.active)) return; const S = toScreen(g.x, g.y); const w = g.width * panzoom.zoom; const h = g.height * panzoom.zoom; ctx.save(); ctx.globalAlpha=0.18; ctx.fillStyle='#4CAF50'; ctx.beginPath(); ctx.rect(S.x - w/2, S.y - h/2, w, h); ctx.fill(); ctx.globalAlpha=1; ctx.setLineDash([6,4]); ctx.strokeStyle='#4CAF50'; ctx.lineWidth=2; ctx.strokeRect(S.x - w/2, S.y - h/2, w, h); ctx.restore(); }
@@ -320,7 +391,12 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
     clear(ctx, w, h);
   if ((deps() as any).grid !== false) drawGrid(ctx,w,h); // default on unless explicitly false
     drawSubnets(ctx);
-  const now = performance.now(); if (lastTs===0) lastTs = now; drawLinks(ctx, now);
+  const now = performance.now();
+  if (lastTs===0) lastTs = now;
+  // Advance shared animation frame for all passes
+  frame += (now - lastTs) * 0.06; lastTs = now;
+  drawLinks(ctx, now);
+    drawMembershipLinks(ctx);
     drawPeers(ctx);
     drawSelection(ctx);
   drawHoverSubnetGhost(ctx); // no-op now

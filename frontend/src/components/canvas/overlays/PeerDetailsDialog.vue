@@ -10,7 +10,7 @@
       <v-card-text class="text-body-2">
         <div class="d-flex flex-column ga-2">
           <div><strong>IP:</strong> {{ peer.ip }}</div>
-          <div><strong>Subnet:</strong> {{ peer.subnetId || 'None' }}</div>
+          <div><strong>Subnet:</strong> {{ subnetDisplay }}</div>
           <div v-if="peer.presharedKey"><strong>PSK:</strong> <code class="code-inline">{{ peer.presharedKey }}</code></div>
           <div v-if="peer.publicKey"><strong>Pub:</strong> <code class="code-inline">{{ peer.publicKey }}</code></div>
           <div class="d-flex align-center ga-2">
@@ -41,6 +41,31 @@
           </div>
 
           <v-expansion-panels focusable inset>
+            <v-expansion-panel v-if="peer2SubnetLinks.length">
+            <v-expansion-panel-title>
+              <div class="d-flex align-center">
+                      <v-icon size="18" icon="mdi-account" class="text-secondary" />
+                      <v-icon size="18" icon="mdi-arrow-left-right" class="mx-1 text-secondary" />
+                      <v-icon size="18" icon="mdi-lan" class="text-secondary" />
+              </div>
+              Membership Links ({{ peer2SubnetLinks.length }})
+            </v-expansion-panel-title>
+            <v-expansion-panel-text class="pt-0">
+              <div v-if="!peer2SubnetLinks.length" class="text-medium-emphasis">No links</div>
+              <v-list v-else density="compact" nav class="py-0">
+                <v-list-item v-for="link in peer2SubnetLinks" :key="link.id">
+                  <v-list-item-title>
+                    {{ store.subnets.find(s=> s.id=== (link.toId===peer?.id ? link.fromId : link.toId))?.name || 'Unknown Subnet'}}
+                  </v-list-item-title>
+                  <template #append>
+                    <v-btn :loading="cutDialog.loading && cutDialog.link?.id===link.id" density="comfortable" size="small" variant="text" icon color="error" @click="openCutDialogPeerSubnet(link)">
+                      <v-icon icon="mdi-content-cut" />
+                    </v-btn>
+                  </template>
+                </v-list-item>
+              </v-list>
+            </v-expansion-panel-text>
+            </v-expansion-panel>
             <v-expansion-panel v-if="p2pLinks.length">
               <v-expansion-panel-title>
                 <div class="d-flex align-center">
@@ -173,7 +198,7 @@
     :link="cutDialog.link"
     :mode="cutDialog.mode"
     :peer-a="peer?.name"
-    :peer-b="cutDialog.mode==='p2p' ? otherPeerName : (cutDialog.mode==='service-host' ? consumerPeerName : (cutDialog.mode==='service-consumer' ? hostPeerName : ''))"
+  :peer-b="cutDialog.mode==='p2p' ? otherPeerName : (cutDialog.mode==='membership' ? subnetName : (cutDialog.mode==='service-host' ? consumerPeerName : (cutDialog.mode==='service-consumer' ? hostPeerName : '')))"
     :service-name="cutDialog.link?.serviceName"
     :problematic="cutDialog.mode==='p2p' && problematicLinks.some(l=> l.id===cutDialog.link?.id)"
     :loading="cutDialog.loading"
@@ -198,6 +223,17 @@ const open = computed({
   set: (v)=> { if(!v){ store.peerDetailsRequestId=null; store.closePeerDetails(); } }
 });
 const peer = computed(()=> store.peers.find(p=> p.id===store.peerDetailsRequestId));
+const subnetDisplay = computed(()=>{
+  const p = peer.value; if (!p || !p.subnetId) return 'None'
+  const s = store.subnets.find(ss=> ss.id===p.subnetId)
+  if (!s) return p.subnetId
+  return `${s.name} (${s.cidr})`
+});
+const peer2SubnetLinks = computed(() => {
+  const p = peer.value;
+  if (!p) return [];
+  return store.links.filter(l => (l.toId === p.id || l.fromId === p.id)&& l.kind === 'membership');
+});
 const p2pLinks = computed(() => {
   const p = peer.value;
   if (!p) return [];
@@ -279,7 +315,7 @@ async function downloadConfig(){
 }
 
 // --- Cut link functionality with dialog ---
-interface CutDialogState { open:boolean; loading:boolean; link:any|null; mode:'p2p'|'service-host'|'service-consumer'|'service-generic'|'' }
+interface CutDialogState { open:boolean; loading:boolean; link:any|null; mode:'p2p'|'membership'|'service-host'|'service-consumer'|'service-generic'|'' }
 const cutDialog = ref<CutDialogState>({ open:false, loading:false, link:null, mode:'' });
 
 const otherPeerName = computed(()=> {
@@ -295,8 +331,14 @@ const hostPeerName = computed(()=> {
   if (!peer.value || !cutDialog.value.link || cutDialog.value.mode!=='service-consumer') return '';
   const l=cutDialog.value.link; return store.peers.find(p=> p.id===l.fromId)?.name || '';
 });
+const subnetName = computed(()=> {
+  if (!peer.value || !cutDialog.value.link || cutDialog.value.mode!=='membership') return '';
+  const l=cutDialog.value.link; const subnetId = (l.fromId===peer.value.id) ? l.toId : l.fromId;
+  return store.subnets.find(s=> s.id===subnetId)?.name || '';
+});
 
 function openCutDialogP2P(link:any){ cutDialog.value = { open:true, loading:false, link, mode:'p2p' }; }
+function openCutDialogPeerSubnet(link:any){ cutDialog.value = { open:true, loading:false, link, mode:'membership' }; }
 function openCutDialogServiceHost(link:any){ cutDialog.value = { open:true, loading:false, link, mode:'service-host' }; }
 function openCutDialogServiceConsumer(link:any){ cutDialog.value = { open:true, loading:false, link, mode:'service-consumer' }; }
 function closeCutDialog(){ if (cutDialog.value.loading) return; cutDialog.value.open=false; }
@@ -307,6 +349,12 @@ async function performCut(){
     if (cutDialog.value.mode==='p2p'){
       const otherId = l.fromId===peer.value.id ? l.toId : l.fromId; const other = store.peers.find(p=> p.id===otherId); if (!other) return;
       await backend.disconnectPeers(peer.value.name, other.name);
+    } else if (cutDialog.value.mode==='membership'){
+      // membership link: fromId is peer, toId is subnet (per topology generation)
+      const subnetId = l.fromId===peer.value.id ? l.toId : l.fromId;
+      const subnet = store.subnets.find(s=> s.id===subnetId);
+      if (!subnet) return;
+      await backend.disconnectPeerFromSubnet(peer.value.name, subnet.cidr);
     } else if (cutDialog.value.mode==='service-host'){
       const consumer = store.peers.find(p=> p.id===l.toId); if (!consumer || !l.serviceName) return;
       await backend.disconnectPeerFromService(consumer.name, l.serviceName);

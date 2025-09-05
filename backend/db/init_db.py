@@ -14,9 +14,9 @@ def init_db(db_path):
     PRESHARED_KEY = os.getenv("PRESHARED_KEY", "X2RHVZ+j12IDqxq8HaKOp77+MRprFo7XxO8LrE9BhxE=")
 
     cursor.execute("""
-    INSERT OR IGNORE INTO subnets (subnet, name, description, x, y, width, height)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (settings.wg_default_subnet, "Wireguard Subnet", "This is the subnet for the WireGuard configuration.", 300, 300, 300, 300))
+    INSERT OR IGNORE INTO subnets (subnet, name, description, x, y, width, height, rgba)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (settings.wg_default_subnet, "Wireguard Subnet", "This is the subnet for the WireGuard configuration.", 300, 300, 600, 300, -220))
 
     # fetch for the master peer 
     cursor.execute("SELECT * FROM peers WHERE username = ?", ("master",))

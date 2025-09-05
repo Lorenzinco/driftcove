@@ -93,7 +93,11 @@
     function onAddSubnetRequest(pos:{ worldX:number; worldY:number }) { addSubnetDialog.value?.showAt(pos.worldX, pos.worldY) }
 
     function handleSubnetDialogClosed(){ canvasStage.value?.clearGhostSubnet?.(); }
-    function handleRequestLinkType(e: any){ const { from, to } = e.detail||{}; if (from && to) linkTypeDialog.value?.show(from, to); }
+    function handleRequestLinkType(e: any){
+        const { fromId, toId, fromType, toType } = e.detail||{};
+        const from = fromId || e.detail?.from; const to = toId || e.detail?.to;
+        if (from && to) linkTypeDialog.value?.show(from, to, { fromType, toType });
+    }
     function handleRequestCutLink(e:any){ const detail = e.detail||{}; if (detail && detail.links) cutLinkDialog.value?.show(detail); }
     function handleRequestAddSubnetAtScreen(e:any){
         const { screenX, screenY } = e.detail || {};

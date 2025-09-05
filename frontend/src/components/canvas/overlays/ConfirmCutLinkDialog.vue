@@ -17,6 +17,12 @@
             <v-icon v-if="problematic" icon="mdi-alert-circle" color="warning" size="20" />
             <span class="font-weight-medium">{{ peerA }} ↔ {{ peerB }}</span>
           </template>
+          <template v-else-if="mode==='membership'">
+            <v-icon icon="mdi-account" size="20" class="text-secondary" />
+            <v-icon icon="mdi-arrow-left-right" size="18" class="text-secondary" />
+            <v-icon icon="mdi-lan" size="20" class="text-secondary" />
+            <span class="font-weight-medium">{{ peerA }} ↔ {{ peerB }}</span>
+          </template>
           <template v-else-if="mode==='service-host'">
             <span class="font-weight-medium">{{ peerB }}</span>
             <v-icon icon="mdi-arrow-right" size="16" class="text-primary" />
@@ -36,8 +42,9 @@
             <span class="font-weight-medium">{{ peerA }} -> {{ peerB }} ({{ serviceName }})</span>
           </template>
         </div>
-        <p v-if="mode==='p2p'">Are you sure you want to remove this peer-to-peer link? Unrestricted traffic between these peers will stop.</p>
-        <p v-else>Are you sure you want to disconnect this service link? Access to the service will be revoked.</p>
+  <p v-if="mode==='p2p'">Are you sure you want to remove this peer-to-peer link? Unrestricted traffic between these peers will stop.</p>
+  <p v-else-if="mode==='membership'">Are you sure you want to remove this membership link? This peer will lose access within the subnet.</p>
+  <p v-else>Are you sure you want to disconnect this service link? Access to the service will be revoked.</p>
         <v-alert v-if="mode==='p2p' && problematic" type="warning" density="compact" class="mt-2" text="This p2p link is problematic because a service link also exists between a host and this peer." />
       </v-card-text>
       <v-divider />
@@ -53,7 +60,7 @@
 import { computed } from 'vue';
 import type { Link } from '@/types/network';
 
-interface Props { modelValue: boolean; link: Link|null; mode: 'p2p'|'service-host'|'service-consumer'|'service-generic'|''; peerA?: string; peerB?: string; serviceName?: string; problematic?: boolean; loading?: boolean }
+interface Props { modelValue: boolean; link: Link|null; mode: 'p2p'|'membership'|'service-host'|'service-consumer'|'service-generic'|''; peerA?: string; peerB?: string; serviceName?: string; problematic?: boolean; loading?: boolean }
 const props = defineProps<Props>();
 const emit = defineEmits<{ (e:'update:modelValue', v:boolean):void; (e:'confirm'):void }>();
 

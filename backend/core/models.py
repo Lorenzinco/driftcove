@@ -78,6 +78,7 @@ class Topology(BaseModel):
     subnets: dict[str, Subnet] = Field(default_factory=dict)
     peers: dict[str, Peer] = Field(default_factory=dict)
     services: dict[str, Service] = Field(default_factory=dict)
+    network: dict[str, list[Peer]] = Field(default_factory=dict)
     service_links: dict[str, list[Peer]] = Field(default_factory=dict)
     p2p_links: dict[str, list[Peer]] = Field(default_factory=dict)
     subnet_links: dict[str, list[Peer]] = Field(default_factory=dict)

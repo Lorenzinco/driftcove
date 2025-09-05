@@ -38,7 +38,7 @@ export function createInteractions(getPeers:()=>Peer[], getSubnets:()=>Subnet[],
   }
 
   function hitTestLink(pt:{x:number;y:number}) {
-    const peers = getPeers(); const links = getLinks();
+    const peers = getPeers(); const subnets = getSubnets(); const links = getLinks();
     const threshold = 8 / getZoom();
     function distPointToSeg(px:number,py:number, ax:number,ay:number,bx:number,by:number){
       const vx=bx-ax, vy=by-ay; const wx=px-ax, wy=py-ay; const c1 = vx*wx + vy*wy; if (c1<=0) return Math.hypot(px-ax,py-ay);
@@ -46,6 +46,22 @@ export function createInteractions(getPeers:()=>Peer[], getSubnets:()=>Subnet[],
     }
     for (let i=links.length-1;i>=0;i--){
       const l = links[i];
+      if ((l as any).kind === 'membership') {
+        // Peer to subnet edge
+        const peer:any = peers.find(p=> p.id===l.fromId) || peers.find(p=> p.id===l.toId);
+        const subnet = subnets.find(s=> s.id===l.toId) || subnets.find(s=> s.id===l.fromId);
+        if (!peer || !subnet) continue;
+        // Ignore membership link if it targets the peer's own containing subnet
+        if (peer.subnetId && peer.subnetId === subnet.id) continue;
+        const cx = subnet.x, cy = subnet.y; const hw = subnet.width/2, hh = subnet.height/2;
+        const vx = peer.x - cx, vy = peer.y - cy;
+        let Bx = cx, By = cy;
+        if (vx === 0 && vy === 0){ Bx = cx + hw; By = cy; }
+        else { const sx = Math.abs(vx)/(hw||1e-6), sy = Math.abs(vy)/(hh||1e-6); const t = Math.max(sx,sy)||1; Bx = cx + vx/t; By = cy + vy/t; }
+        const d = distPointToSeg(pt.x, pt.y, peer.x, peer.y, Bx, By);
+        if (d <= threshold) return l;
+        continue;
+      }
       const a = peers.find(p=>p.id===l.fromId); const b = peers.find(p=>p.id===l.toId); if (!a||!b) continue;
       const d = distPointToSeg(pt.x, pt.y, a.x, a.y, b.x, b.y);
       if (d <= threshold) return l;

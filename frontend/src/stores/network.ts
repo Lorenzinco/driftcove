@@ -143,15 +143,17 @@ export const useNetworkStore = defineStore('network', {
             }
 
             // --- Peers ---
-            // Allowed rule (updated): a peer is allowed ONLY if it has a membership link to its own subnet.
-            // (Previously: any link qualified. Now restrict to membership kind linking peer -> subnetId.)
+            // Allowed rule: a peer is connected ONLY if it has a membership link to the subnet it is contained in.
+            // Here 'contained in' comes from backendInteraction fetchTopology assigning subnetId via topology.network.
             const peerAllowed: Record<string, boolean> = {}
             const incomingPeerIds = new Set(payload.peers.map(p => p.id))
-            // Build quick lookup of membership links for efficiency
+            // Build quick lookup: peerId -> set of subnetIds where membership link exists
+            const peerMemberships: Record<string, Set<string>> = {}
             for (const l of payload.links) {
                 if ((l as any).kind === 'membership') {
-                    // Expect pattern: fromId = peerId, toId = subnetId
-                    peerAllowed[l.fromId] = true
+                    const pid = (l as any).fromId; const sid = (l as any).toId
+                    if (!peerMemberships[pid]) peerMemberships[pid] = new Set<string>()
+                    peerMemberships[pid].add(sid)
                 }
             }
             // (incomingPeerIds defined above)
@@ -170,7 +172,8 @@ export const useNetworkStore = defineStore('network', {
                 existing.host = Object.values(existing.services||{}).some((s:any)=> s && typeof s.port==='number' && !isNaN(s.port))
                 if (incoming.presharedKey && existing.presharedKey !== incoming.presharedKey) existing.presharedKey = incoming.presharedKey
                 if (incoming.publicKey && existing.publicKey !== incoming.publicKey) existing.publicKey = incoming.publicKey
-                existing.allowed = !!peerAllowed[existing.id]
+                // Connected if there is a membership link specifically to its own subnetId
+                existing.allowed = !!(existing.subnetId && peerMemberships[existing.id]?.has(existing.subnetId))
                 return true
             })
             for (const inc of payload.peers) {
@@ -192,7 +195,8 @@ export const useNetworkStore = defineStore('network', {
                     }
                     const services = inc.services || {}
                     const host = Object.values(services).some((s:any)=> s && typeof s.port==='number' && !isNaN(s.port))
-                    this.peers.push({ id: inc.id, name: inc.name, ip: inc.ip, subnetId: inc.subnetId, x, y, allowed: !!peerAllowed[inc.id], services, host, presharedKey: inc.presharedKey, publicKey: inc.publicKey })
+                    const allowed = !!(inc.subnetId && peerMemberships[inc.id]?.has(inc.subnetId))
+                    this.peers.push({ id: inc.id, name: inc.name, ip: inc.ip, subnetId: inc.subnetId, x, y, allowed, services, host, presharedKey: inc.presharedKey, publicKey: inc.publicKey })
                 }
             }
 

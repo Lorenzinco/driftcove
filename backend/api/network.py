@@ -35,6 +35,7 @@ def get_topology(_: Annotated[str, Depends(verify_token)])->dict:
     subnets: dict[str, Subnet] = {}
     peers: dict[str, Peer] = {}
     services: dict[str, Service] = {}
+    network: dict[str, list[Peer]] = {}
 
     p2p_links : dict[str, list[Peer]] = {}
     service_links : dict[str, list[Peer]] = {}
@@ -45,7 +46,9 @@ def get_topology(_: Annotated[str, Depends(verify_token)])->dict:
         with lock.read_lock():
             subnets_fetched = db.get_subnets()
             for subnet in subnets_fetched:
+                peers_in_subnet = db.get_peers_in_subnet(subnet)
                 subnets[subnet.subnet] = subnet
+                network[subnet.subnet] = peers_in_subnet
             peers_fetched = db.get_all_peers()
             for peer in peers_fetched:
                 peers[peer.address] = peer
@@ -58,8 +61,9 @@ def get_topology(_: Annotated[str, Depends(verify_token)])->dict:
             service_links = db.get_links_between_peers_and_services()
 
             subnet_links = db.get_links_between_subnets_and_peers()
+            logging.info("Retrieved full topology from the database.")
 
-            topology = Topology(subnets=subnets, peers=peers, services=services, service_links=service_links, p2p_links=p2p_links, subnet_links=subnet_links)
+            topology = Topology(subnets=subnets, peers=peers, services=services, network=network, service_links=service_links, p2p_links=p2p_links, subnet_links=subnet_links)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Topology get failed: {e}")
@@ -139,9 +143,9 @@ def upload_topology(topology: Topology, _: Annotated[str, Depends(verify_token)]
             # Create all subnet links
             for subnet in topology.subnets.values():
                 if subnet.name in topology.subnet_links:
-                    for linked_peer in topology.subnet_links[subnet.name]:
+                    for linked_peer in topology.subnet_links[subnet.address]:
                         peer_in_db = db.get_peer_by_address(linked_peer.address)
-                        subnet_in_db = db.get_subnet_by_name(subnet.name)
+                        subnet_in_db = db.get_subnet_by_address(subnet.address)
                         if peer_in_db is None:
                             raise HTTPException(status_code=404, detail=f"Peer with address {linked_peer.address} does not exist")
                         if subnet_in_db is None:

@@ -8,7 +8,7 @@
       <v-card-text>
         <template v-if="links.length">
           <div class="text-body-2 mb-2">
-            Links between <strong>{{ peerName(links[0].fromId) }}</strong> and <strong>{{ peerName(links[0].toId) }}</strong>
+            Links between <strong>{{ entityName(links[0].fromId) }}</strong> and <strong>{{ entityName(links[0].toId) }}</strong>
           </div>
           <v-select
             v-model="selectedId"
@@ -52,9 +52,9 @@
   <ConfirmCutLinkDialog
     v-model="confirmOpen"
     :link="currentLink"
-    :mode="currentLink ? (currentLink.kind==='p2p' ? 'p2p' : 'service-generic') : ''"
-    :peer-a="currentLink ? peerName(currentLink.fromId) : ''"
-    :peer-b="currentLink ? peerName(currentLink.toId) : ''"
+  :mode="currentLink ? (currentLink.kind==='p2p' ? 'p2p' : (currentLink.kind==='membership' ? 'membership' : 'service-generic')) : ''"
+  :peer-a="currentLink ? entityName(currentLink.fromId) : ''"
+  :peer-b="currentLink ? entityName(currentLink.toId) : ''"
     :service-name="currentLink?.serviceName"
     :problematic="currentLink?.kind==='p2p' && problematicLinkIds.has(currentLink.id)"
     :loading="confirmLoading"
@@ -63,7 +63,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue';
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import ConfirmCutLinkDialog from './ConfirmCutLinkDialog.vue';
 import { useNetworkStore } from '@/stores/network';
 import { useBackendInteractionStore } from '@/stores/backendInteraction';
@@ -81,7 +81,11 @@ const confirmLoading = ref(false);
 const currentLink = computed(()=> links.value.find(l=> l.id===selectedId.value) || null);
 let pairKey = '';
 
-function peerName(id:string){ return store.peers.find(p=>p.id===id)?.name || id; }
+function entityName(id:string){
+  const p = store.peers.find(p=>p.id===id); if (p) return p.name;
+  const s = store.subnets.find(s=>s.id===id); if (s) return s.name;
+  return id;
+}
 
 // Determine problematic p2p links (pair has at least one service link and a host peer)
 const problematicLinkIds = computed(()=> {
@@ -99,8 +103,8 @@ const problematicLinkIds = computed(()=> {
 });
 
 const selectItems = computed(()=> links.value.map(l=> {
-  const from = peerName(l.fromId);
-  const to = peerName(l.toId);
+  const from = entityName(l.fromId);
+  const to = entityName(l.toId);
   if (l.kind === 'p2p') {
     return { value: l.id, kind: l.kind, label: `${from} ↔ ${to}`, id: l.id };
   }
@@ -111,6 +115,9 @@ const selectItems = computed(()=> links.value.map(l=> {
     const svcName = l.serviceName || svcRec?.name || 'service';
     const portStr = port!==undefined ? `:${port}` : '';
     return { value: l.id, kind: l.kind, label: `${from} -> ${to}${portStr} (${svcName})`, id: l.id };
+  }
+  if (l.kind === 'membership') {
+    return { value: l.id, kind: l.kind, label: `${from} ↔ ${to}`, id: l.id };
   }
   return { value: l.id, kind: l.kind, label: `${from} -> ${to}`, id: l.id };
 }));
@@ -138,6 +145,13 @@ async function performDelete(){
       const consumer = store.peers.find(p=> p.id===link.toId);
       const svcName = link.serviceName || '';
       if (consumer && svcName) await backend.disconnectPeerFromService(consumer.name, svcName);
+    } else if (link.kind === 'membership') {
+      const peer = store.peers.find(p=> p.id===link.fromId) || store.peers.find(p=> p.id===link.toId);
+      if (!peer) return;
+      const subnetId = peer.id === link.fromId ? link.toId : link.fromId;
+      const subnet = store.subnets.find(s=> s.id===subnetId);
+      if (!subnet) return;
+      await backend.disconnectPeerFromSubnet(peer.name, subnet.cidr);
     }
   } catch(e){ /* error handled in backend store */ }
   finally {
@@ -149,6 +163,9 @@ function handleRequestCut(e:any){ const detail=e.detail||{}; show(detail); }
 
 onMounted(()=> { window.addEventListener('request-cut-link', handleRequestCut); });
 onBeforeUnmount(()=> { window.removeEventListener('request-cut-link', handleRequestCut); });
+
+// When dialog closes due to backdrop or ESC, revert to select tool
+watch(open, (now, prev)=>{ if (prev && !now) { store.tool='select'; } });
 
 defineExpose({ show });
 </script>

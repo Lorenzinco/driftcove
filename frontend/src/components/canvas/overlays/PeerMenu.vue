@@ -15,6 +15,12 @@
             title="Open Peer Info"
             @click="$emit('info')"
           />
+          <v-list-item
+            value="connect"
+            prepend-icon="mdi-connection"
+            title="Connect this peer"
+            @click="$emit('connect')"
+          />
           <v-divider class="my-1" />
           <v-list-item
             value="delete"
@@ -31,7 +37,7 @@
 
 <script setup lang="ts">
 withDefaults(defineProps<{ open: boolean; x: number; y: number }>(), { x: 0, y: 0 });
-defineEmits<{ (e:'info'): void; (e:'delete'): void }>();
+defineEmits<{ (e:'info'): void; (e:'connect'): void; (e:'delete'): void }>();
 </script>
 
 <style scoped>

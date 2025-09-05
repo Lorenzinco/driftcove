@@ -74,7 +74,21 @@
                 <v-text-field v-model.number="store.selectedSubnet.width" type="number" label="Width" density="comfortable" hide-details="auto" />
                 <v-text-field v-model.number="store.selectedSubnet.height" type="number" label="Height" density="comfortable" hide-details="auto" />
             </div>
-                                    <div class="d-flex ga-2 w-100 mt-2 align-start">
+            <v-spacer class="mt-3 mb-3"/>
+                                    <div class="d-flex flex-column ga-2 w-100 mt-2 align-start">
+                                        <v-text-field
+                                            v-model="hexColor"
+                                            label="Hex color"
+                                            density="comfortable"
+                                            hide-details="auto"
+                                            class="flex-grow-1 w-100"
+                                            spellcheck="false"
+                                            autocapitalize="off"
+                                            autocomplete="off"
+                                            @change="applyHexColor"
+                                            @blur="applyHexColor"
+                                            @keydown.enter.prevent="applyHexColor"
+                                        />
                                         <v-color-picker
                                             v-model="pickerRgba"
                                             mode="rgba"

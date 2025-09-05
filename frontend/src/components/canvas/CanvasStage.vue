@@ -31,7 +31,13 @@ const ui = reactive({
   hoverLinkId: null as string | null,
   selection: null as null | { type:'peer'|'subnet'|'link'; id:string },
   tool: () => store.tool,
-  connect: { active:false, fromPeerId:'', ghostTo: null as null | { x:number; y:number } },
+  connect: { active:false, fromPeerId:'', fromSubnetId:'', ghostTo: null as null | { x:number; y:number } },
+  // when connecting from a subnet, store its id here
+  // keep fromPeerId for peers to minimize changes elsewhere
+  // ghostTo is shared
+  // Note: renderer supports fromSubnetId as of this change
+  // eslint-disable-next-line vue/no-unused-properties
+  
   ghostSubnet: { active:false, x:0, y:0, width:420, height:260, frozen:false } as { active:boolean; x:number; y:number; width:number; height:number; frozen:boolean }
 });
 
@@ -66,10 +72,23 @@ const renderer = createRenderer(() => ({
 }));
 renderer.setInvalidator(invalidate);
 
+// Global handler to start connect mode from an external menu (PeerContext)
+function handleStartConnect(e:any){
+  const id = e?.detail?.id as string;
+  if (!id) return;
+  const p = store.peers.find(pp=>pp.id===id); if (!p) return;
+  // Ensure tool is connect and initialize connect state
+  store.tool = 'connect' as any;
+  ui.connect.active = true; ui.connect.fromPeerId = id; ui.connect.fromSubnetId=''; ui.connect.ghostTo = { x: p.x, y: p.y };
+  // Show selection outline on starting peer
+  syncSelection({ type: 'peer', id });
+  invalidate();
+}
+
 // Watch tool changes to clear connect state when leaving the connect tool
 watch(()=>store.tool, (newTool, oldTool)=> {
   if (oldTool==='connect' && newTool!=='connect'){
-    ui.connect.active=false; ui.connect.fromPeerId=''; ui.connect.ghostTo=null;
+  ui.connect.active=false; ui.connect.fromPeerId=''; ui.connect.fromSubnetId=''; ui.connect.ghostTo=null;
     // Also clear any peer selection outline to avoid stale highlight
     if (ui.selection?.type==='peer') { ui.selection=null; store.selection=null as any; }
     invalidate();
@@ -141,19 +160,28 @@ function onMouseDown(e:MouseEvent){
     }
   }
 
-  if (store.tool==='connect' && peer){
+  if (store.tool==='connect' && (peer || subnet)){
+    const targetType = peer ? 'peer' : 'subnet';
+    const tPeer:any = peer; const tSubnet:any = subnet;
     if (!ui.connect.active){
-      ui.connect.active=true; ui.connect.fromPeerId = peer.id; ui.connect.ghostTo = { x: peer.x, y: peer.y };
-      syncSelection({ type:'peer', id: peer.id }); invalidate(); return;
-    } else if (ui.connect.fromPeerId && ui.connect.fromPeerId !== peer.id){
-      // Emit event for parent to open link type dialog (service or p2p)
-      const from = ui.connect.fromPeerId; const to = peer.id;
-      ui.connect.active=false; ui.connect.fromPeerId=''; ui.connect.ghostTo=null;
-      emit('subnet-click', { id: '', x:0, y:0 }); // no-op to close any subnet menu if open
-      window.dispatchEvent(new CustomEvent('request-link-type', { detail: { from, to } }));
+      ui.connect.active = true;
+      if (targetType==='peer'){ ui.connect.fromPeerId = tPeer.id; ui.connect.fromSubnetId=''; ui.connect.ghostTo = { x: tPeer.x, y: tPeer.y }; syncSelection({ type:'peer', id: tPeer.id }); }
+      else { ui.connect.fromSubnetId = tSubnet.id; ui.connect.fromPeerId=''; ui.connect.ghostTo = { x: tSubnet.x, y: tSubnet.y }; syncSelection({ type:'subnet', id: tSubnet.id }); }
       invalidate(); return;
-    } else { // clicked same peer again - reset
-      ui.connect.active=false; ui.connect.fromPeerId=''; ui.connect.ghostTo=null; invalidate(); return;
+    } else {
+      // Second pick
+      const fromType = ui.connect.fromPeerId ? 'peer' : (ui.connect.fromSubnetId ? 'subnet' : '');
+      const fromId = ui.connect.fromPeerId || ui.connect.fromSubnetId;
+      const toId = targetType==='peer' ? tPeer.id : tSubnet.id;
+      if (!fromType || !fromId){ ui.connect.active=false; ui.connect.fromPeerId=''; ui.connect.fromSubnetId=''; ui.connect.ghostTo=null; invalidate(); return; }
+      if (fromId === toId){ ui.connect.active=false; ui.connect.fromPeerId=''; ui.connect.fromSubnetId=''; ui.connect.ghostTo=null; invalidate(); return; }
+      // Reset connect state
+      ui.connect.active=false; const _fp = ui.connect.fromPeerId; const _fs = ui.connect.fromSubnetId; ui.connect.fromPeerId=''; ui.connect.fromSubnetId=''; ui.connect.ghostTo=null;
+      emit('subnet-click', { id: '', x:0, y:0 });
+      // Dispatch event with types for dialog
+      const detail:any = { fromId, toId, fromType, toType: targetType, from: fromId, to: toId };
+      window.dispatchEvent(new CustomEvent('request-link-type', { detail }));
+      invalidate(); return;
     }
   }
 
@@ -164,12 +192,15 @@ function onMouseDown(e:MouseEvent){
       return;
     }
     syncSelection({ type:'peer', id: peer.id });
-    interactions.drag.active=true; interactions.drag.type='peer'; interactions.drag.id=peer.id; interactions.drag.offsetX = pt.x - peer.x; interactions.drag.offsetY = pt.y - peer.y;
+    // Only start dragging on left button
+    if (e.button === 0) {
+      interactions.drag.active=true; interactions.drag.type='peer'; interactions.drag.id=peer.id; interactions.drag.offsetX = pt.x - peer.x; interactions.drag.offsetY = pt.y - peer.y;
+    }
   click.down=true; click.worldX=pt.x; click.worldY=pt.y; click.target=peer.id; click.type='peer'; click.moved=false; (click as any).sx = sx; (click as any).sy = sy;
   } else if (subnet){
       // Resize test first (edges) before move
       const edge = interactions.edgeAtPoint(subnet, pt);
-      if (edge){
+      if (edge && e.button === 0){
         interactions.resizeDrag.active = true; interactions.resizeDrag.id = subnet.id; interactions.resizeDrag.edge = edge;
         interactions.resizeDrag.left = subnet.x - subnet.width/2; interactions.resizeDrag.right = subnet.x + subnet.width/2;
         interactions.resizeDrag.top = subnet.y - subnet.height/2; interactions.resizeDrag.bottom = subnet.y + subnet.height/2;
@@ -187,7 +218,9 @@ function onMouseDown(e:MouseEvent){
         return false;
       }).map(p=>p.id);
       interactions.drag.containedSubnets = descendants.map(s=>s.id);
-      interactions.drag.active=true; interactions.drag.type='subnet'; interactions.drag.id=subnet.id; interactions.drag.offsetX = pt.x - subnet.x; interactions.drag.offsetY = pt.y - subnet.y;
+      if (e.button === 0) {
+        interactions.drag.active=true; interactions.drag.type='subnet'; interactions.drag.id=subnet.id; interactions.drag.offsetX = pt.x - subnet.x; interactions.drag.offsetY = pt.y - subnet.y;
+      }
   click.down=true; click.worldX=pt.x; click.worldY=pt.y; click.target=subnet.id; click.type='subnet'; click.moved=false; (click as any).sx = sx; (click as any).sy = sy;
   } else {
     syncSelection(null); click.down=true; // allow empty click tracking (for subnet creation)
@@ -286,7 +319,7 @@ function onMouseMove(e:MouseEvent){
     }
   }
   // Connect ghost line
-  if (store.tool==='connect' && ui.connect.active && ui.connect.fromPeerId){ ui.connect.ghostTo = { x: pt.x, y: pt.y }; invalidate(); }
+  if (store.tool==='connect' && ui.connect.active && (ui.connect.fromPeerId || (ui.connect as any).fromSubnetId)){ ui.connect.ghostTo = { x: pt.x, y: pt.y }; invalidate(); }
   // Ghost subnet preview
   if (store.tool==='add-subnet' && !interactions.drag.active && !ui.ghostSubnet.frozen){ ui.ghostSubnet.active = true; ui.ghostSubnet.x = pt.x; ui.ghostSubnet.y = pt.y; invalidate(); }
   // Update tool indicator
@@ -303,9 +336,8 @@ function onMouseMove(e:MouseEvent){
 function onMouseUp(){
   store.pan.dragging=false; interactions.drag.active=false;
   if (interactions.resizeDrag.active){ interactions.resizeDrag.active=false; invalidate(); }
-  // Open peer details only when in select tool mode (avoid in cut/connect/add-subnet modes)
-  if (click.down && !click.moved && click.type==='peer' && click.target && store.tool==='select'){
-    // Only emit for context menu; do NOT open peer details automatically anymore.
+  // Open peer context menu only on right-click when in select tool mode (left-click just selects)
+  if (click.down && !click.moved && click.type==='peer' && click.target && store.tool==='select' && (window as any).__lastMouseButton===2){
     emit('peer-click', { id: click.target, x: (click as any).sx, y: (click as any).sy });
   }
   if (click.down && !click.moved && ((click.type==='' && ui.hoverLinkId) || (store.tool==='cut' && ui.hoverLinkId))){
@@ -325,8 +357,8 @@ function onMouseUp(){
     }
     }
   }
-  if (click.down && !click.moved && click.type==='subnet' && click.target){
-    // Emit subnet click for menu (coordinates already captured in click)
+  // Open subnet context menu only on right-click (left-click just selects)
+  if (click.down && !click.moved && click.type==='subnet' && click.target && (window as any).__lastMouseButton===2){
     emit('subnet-click', { id: click.target, x: (click as any).sx, y: (click as any).sy });
   }
   // Create subnet on empty click in add-subnet tool
@@ -344,7 +376,7 @@ function onMouseUp(){
 
 function onKeydown(e:KeyboardEvent){
   if ((e.key==='Delete' || e.key==='Backspace') && !(e.target as HTMLElement).matches('input,textarea')){ e.preventDefault(); store.deleteSelection(); invalidate(); }
-  if (e.key==='Escape'){ store.tool='select'; ui.connect.active=false; ui.connect.fromPeerId=''; ui.connect.ghostTo=null; }
+  if (e.key==='Escape'){ store.tool='select'; ui.connect.active=false; ui.connect.fromPeerId=''; ui.connect.fromSubnetId=''; ui.connect.ghostTo=null; }
 }
 
 onMounted(()=>{
@@ -354,6 +386,8 @@ onMounted(()=>{
   watch(()=>bus.tick, ()=> invalidate());
   window.addEventListener('resize', onResize);
   window.addEventListener('topology-updated', forceInitialRedraw);
+  // Allow external trigger to start connect from a specific peer
+  window.addEventListener('start-connect-from-peer', handleStartConnect as any);
   const c = canvasRef.value!;
   c.addEventListener('wheel', onWheel as any, { passive:false });
   c.addEventListener('mousedown', onMouseDown as any);
@@ -369,6 +403,7 @@ defineExpose({ clearGhostSubnet });
 onUnmounted(()=>{
   window.removeEventListener('resize', onResize);
   window.removeEventListener('topology-updated', forceInitialRedraw);
+  window.removeEventListener('start-connect-from-peer', handleStartConnect as any);
   const c = canvasRef.value; if (c){ c.removeEventListener('wheel', onWheel as any); c.removeEventListener('mousedown', onMouseDown as any); }
   window.removeEventListener('mousemove', onMouseMove as any);
   window.removeEventListener('mouseup', onMouseUp as any);

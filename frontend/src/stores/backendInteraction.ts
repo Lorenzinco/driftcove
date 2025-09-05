@@ -62,6 +62,7 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 				const serviceLinksDict: Record<string, any[]> = topo.service_links || {}
 				const p2pLinksDict: Record<string, any[]> = topo.p2p_links || {}
 				const subnetLinksDict: Record<string, any[]> = topo.subnet_links || {}
+				const networkDict: Record<string, any[]> = topo.network || {}
 
 				// Subnets
 				const subnetsMeta: Array<{ id: string; name: string; cidr: string; description?: string; x?: number; y?: number; width?: number; height?: number; rgba?: number }> = []
@@ -72,12 +73,12 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 					subnetsMeta.push({ id, name: s.name || cidr, cidr, description: s.description, x: s.x, y: s.y, width: s.width, height: s.height, rgba: s.rgba })
 				}
 
-				// Membership map: peer public key -> subnetId
-				const membership: Record<string, string> = {}
-				for (const cidr of Object.keys(subnetLinksDict)) {
+				// Containment map from new 'network' field: peer public key -> subnetId (cidr)
+				const contained: Record<string, string> = {}
+				for (const cidr of Object.keys(networkDict)) {
 					const sid = cidr
-					for (const p of subnetLinksDict[cidr] || []) {
-						if (p?.public_key) membership[p.public_key] = sid
+					for (const p of networkDict[cidr] || []) {
+						if (p?.public_key) contained[p.public_key] = sid
 					}
 				}
 
@@ -89,7 +90,7 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 					const servicesRaw = p.services || {}
 					const services: Record<string, any> = {}
 					for (const k of Object.keys(servicesRaw)) services[k] = servicesRaw[k]
-					const subnetId = membership[p.public_key] || null
+					const subnetId = contained[p.public_key] || null
 					const id = p.public_key // raw public key as id
 					const host = Object.values(services).some((sv:any)=> sv && typeof sv.port === 'number' && !isNaN(sv.port))
 					peersMeta.push({ id, name: p.username, ip: p.address, subnetId, x: p.x, y: p.y, services, host, presharedKey: p.preshared_key, publicKey: p.public_key })
