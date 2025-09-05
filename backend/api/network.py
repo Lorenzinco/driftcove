@@ -56,10 +56,8 @@ def get_topology(_: Annotated[str, Depends(verify_token)])->dict:
             p2p_links = db.get_links_between_peers()
 
             service_links = db.get_links_between_peers_and_services()
-            for subnet in subnets_fetched:
-                peers_in_subnet = db.get_peers_in_subnet(subnet)
-                if len(peers_in_subnet) > 0:
-                    subnet_links[subnet.subnet] = peers_in_subnet
+
+            subnet_links = db.get_links_between_subnets_and_peers()
 
             topology = Topology(subnets=subnets, peers=peers, services=services, service_links=service_links, p2p_links=p2p_links, subnet_links=subnet_links)
 

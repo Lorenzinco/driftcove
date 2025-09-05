@@ -77,6 +77,7 @@ watch(()=>store.tool, (newTool, oldTool)=> {
 });
 
 function draw() { withCtx((ctx,w,h) => renderer.draw(ctx,w,h)); }
+function forceInitialRedraw(){ resizeToParent(); draw(); }
 
 function screenToWorld(sx:number, sy:number){ return { x: (sx - store.pan.x)/store.zoom, y: (sy - store.pan.y)/store.zoom }; }
 function worldToScreen(wx:number, wy:number){ return { x: wx * store.zoom + store.pan.x, y: wy * store.zoom + store.pan.y }; }
@@ -103,7 +104,10 @@ function syncSelection(sel: null | { type:'peer'|'subnet'|'link'; id:string }) {
     const p = store.peers.find(p=>p.id===sel.id); store.selection = { type:'peer', id: sel.id, name: p?.name || 'Peer' } as any;
   } else if (sel.type==='subnet') {
     const s = store.subnets.find(s=>s.id===sel.id); store.selection = { type:'subnet', id: sel.id, name: s?.name || 'Subnet' } as any;
-  } else { store.selection = { type:'link', id: sel.id, name: 'Link' } as any; }
+  } else {
+    // sel.id passed for link will already be pairKey (a::b). Keep as is.
+    store.selection = { type:'link', id: sel.id, name: 'Links' } as any;
+  }
 }
 
 function onMouseDown(e:MouseEvent){
@@ -119,7 +123,9 @@ function onMouseDown(e:MouseEvent){
 
   // Link takes precedence over subnet when clicked (so subnet menu doesn't steal click)
   if (linkHit) {
-    syncSelection({ type:'link', id: linkHit.id });
+    function pairKey(a:string,b:string){ return a < b ? `${a}::${b}` : `${b}::${a}`; }
+    const pair = pairKey(linkHit.fromId, linkHit.toId);
+    syncSelection({ type:'link', id: pair });
     click.down=true; click.worldX=pt.x; click.worldY=pt.y; click.type='link'; click.target=linkHit.id; click.moved=false; (click as any).sx = sx; (click as any).sy = sy;
     invalidate();
     return;
@@ -241,6 +247,7 @@ function onMouseMove(e:MouseEvent){
   // Hover targets
   const peer:any = interactions.hitTestPeer(pt); const link = peer ? null : interactions.hitTestLink(pt); const subnet:any = (peer || link) ? null : interactions.hitTestSubnet(pt);
   const newPeerId = peer ? peer.id : null; const newSubnetId = subnet ? subnet.id : null;
+  // For hover, if a link is hit, store representative link id (first). (Aggregation done in renderer.)
   const newLinkId = link ? link.id : null;
   if (newPeerId !== ui.hoverPeerId || newSubnetId !== ui.hoverSubnetId || newLinkId !== ui.hoverLinkId){ ui.hoverPeerId = newPeerId; ui.hoverSubnetId = newSubnetId; ui.hoverLinkId = newLinkId; invalidate(); }
   // Resize cursor feedback when hovering subnet edge (not dragging/resizing)
@@ -282,7 +289,13 @@ function onMouseUp(){
   store.pan.dragging=false; interactions.drag.active=false;
   if (interactions.resizeDrag.active){ interactions.resizeDrag.active=false; invalidate(); }
   if (click.down && !click.moved && click.type==='peer' && click.target){ /* open peer dialog through store */ store.openPeerDetails(click.target); }
-  if (click.down && !click.moved && click.type==='' && ui.hoverLinkId){ syncSelection({ type:'link', id: ui.hoverLinkId }); }
+  if (click.down && !click.moved && click.type==='' && ui.hoverLinkId){
+    const real = store.links.find(l=> l.id===ui.hoverLinkId);
+    if (real){
+      function pairKey(a:string,b:string){ return a < b ? `${a}::${b}` : `${b}::${a}`; }
+      syncSelection({ type:'link', id: pairKey(real.fromId, real.toId) });
+    }
+  }
   if (click.down && !click.moved && click.type==='subnet' && click.target){
     // Emit subnet click for menu (coordinates already captured in click)
     emit('subnet-click', { id: click.target, x: (click as any).sx, y: (click as any).sy });
@@ -307,6 +320,7 @@ onMounted(()=>{
   // Redraw bus listener
   watch(()=>bus.tick, ()=> invalidate());
   window.addEventListener('resize', onResize);
+  window.addEventListener('topology-updated', forceInitialRedraw);
   const c = canvasRef.value!;
   c.addEventListener('wheel', onWheel as any, { passive:false });
   c.addEventListener('mousedown', onMouseDown as any);
@@ -321,6 +335,7 @@ defineExpose({ clearGhostSubnet });
 
 onUnmounted(()=>{
   window.removeEventListener('resize', onResize);
+  window.removeEventListener('topology-updated', forceInitialRedraw);
   const c = canvasRef.value; if (c){ c.removeEventListener('wheel', onWheel as any); c.removeEventListener('mousedown', onMouseDown as any); }
   window.removeEventListener('mousemove', onMouseMove as any);
   window.removeEventListener('mouseup', onMouseUp as any);

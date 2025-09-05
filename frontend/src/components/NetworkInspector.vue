@@ -28,6 +28,7 @@
                 </v-dialog>
 
 
+                <!-- Unified selection detail block to prevent conflicting parallel v-if trees -->
                 <template v-if="store.selectedPeer">
             <v-text-field v-model="store.selectedPeer.name" label="Name" density="comfortable" />
             <v-text-field v-model="store.selectedPeer.ip" label="IP address" density="comfortable" />
@@ -66,7 +67,7 @@
         </template>
 
 
-        <template v-else-if="store.selectedSubnet">
+    <template v-else-if="store.selectedSubnet">
             <v-text-field v-model="store.selectedSubnet.name" label="Name" density="comfortable" />
             <v-text-field v-model="store.selectedSubnet.cidr" label="CIDR" density="comfortable" />
             <div class="d-flex ga-2">
@@ -87,7 +88,30 @@
             <div class="text-caption text-medium-emphasis mt-1">Drag edges or edit width/height.</div>
         </template>
 
-
+        <template v-else-if="store.selection?.type==='link' && store.selectedLinks && store.selectedLinks.length">
+            <div class="mb-2 text-subtitle-2">Links between selected peers ({{ store.selectedLinks.length }})</div>
+            <v-alert v-if="store.selectedLinks.some(l=>l.kind==='p2p') && store.selectedLinks.some(l=>l.kind==='service')" type="warning" density="comfortable" class="mb-2">
+                Mixed p2p + service links detected between these peers. Consider simplifying.
+            </v-alert>
+            <v-table density="compact" class="mb-2">
+                <thead>
+                    <tr>
+                        <th class="text-left">Kind</th>
+                        <th class="text-left">From</th>
+                        <th class="text-left">To</th>
+                        <th class="text-left">Service</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="l in store.selectedLinks" :key="l.id">
+                        <td>{{ l.kind }}</td>
+                        <td>{{ store.peers.find(p => p.id === l.fromId)?.name }}</td>
+                        <td>{{ store.peers.find(p => p.id === l.toId)?.name }}</td>
+                        <td>{{ l.serviceName || (l.kind==='p2p' ? '-' : '') }}</td>
+                    </tr>
+                </tbody>
+            </v-table>
+        </template>
         <template v-else>
             <div class="text-medium-emphasis">No selection</div>
         </template>
@@ -200,6 +224,34 @@ const applySuccess = ref(false)
 // Categorised peer lists
 const hostPeers = computed(() => store.peers.filter(p => p.host))
 const nonHostPeers = computed(() => store.peers.filter(p => !p.host))
+
+const problematicLinksInNetwork = computed(() => {
+    const links = store.links;
+    const problems: any[] = []
+    for (const p of store.peers) {
+        const outgoingP2P = links.filter(l => l.fromId === p.id && l.kind === 'p2p')
+        const incomingP2P = links.filter(l => l.toId === p.id && l.kind === 'p2p')
+        const outgoingService = links.filter(l => l.fromId === p.id && l.kind === 'service')
+        const incomingService = links.filter(l => l.toId === p.id && l.kind === 'service')
+        // Outgoing p2p vs outgoing service
+        for (const pp of outgoingP2P) {
+            for (const ps of outgoingService) if (pp.toId === ps.toId) problems.push(pp)
+        }
+        // Outgoing p2p vs incoming service
+        for (const pp of outgoingP2P) {
+            for (const ps of incomingService) if (pp.toId === ps.fromId) problems.push(pp)
+        }
+        // Incoming p2p vs outgoing service
+        for (const pp of incomingP2P) {
+            for (const ps of outgoingService) if (pp.fromId === ps.toId) problems.push(pp)
+        }
+        // Incoming p2p vs incoming service
+        for (const pp of incomingP2P) {
+            for (const ps of incomingService) if (pp.fromId === ps.fromId) problems.push(pp)
+        }
+    }
+    return problems
+})
 
 // Subnet color handling
 const hexColor = ref('')

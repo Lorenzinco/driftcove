@@ -4,7 +4,7 @@ from backend.core.config import verify_token, settings
 from backend.core.lock import lock
 from backend.core.state_manager import state_manager
 from backend.core.database import db
-from backend.core.iptables import remove_link_with_port, allow_link_with_port
+from backend.core.iptables import remove_link_with_port, allow_link_with_port, allow_answer_link, remove_answers_link
 from backend.core.models import Service
 from backend.core.logger import logging
 from typing import Annotated
@@ -94,6 +94,8 @@ def service_connect(username: str, service_name: str, _: Annotated[str, Depends(
             db.add_peer_service_link(peer, service)
             logging.info(f"Connecting peer {peer.username} to service {service.name}")
             allow_link_with_port(peer.address, host.address, service.port)
+            allow_answer_link(host.address, peer.address)
+
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Connecting peer {username} to {service_name} failed: {e}")
@@ -117,6 +119,7 @@ def service_disconnect(username: str, service_name: str, _: Annotated[str, Depen
             
             logging.info(f"Disconnecting peer {peer.username} from service {service.name}")
             remove_link_with_port(peer.address, service.address, service.port)
+            remove_answers_link(service.address, peer.address)
             db.remove_peer_service_link(peer, service)
     
         except Exception as e:

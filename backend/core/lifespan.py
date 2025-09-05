@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from backend.core.config import settings
 from backend.core.database import db
-from backend.core.iptables import allow_link, flush_iptables, default_policy_drop, allow_link_with_port
+from backend.core.iptables import allow_link, flush_iptables, default_policy_drop, allow_link_with_port, allow_answer_link
 from backend.core.logger import logging
 from backend.core.wireguard import apply_to_wg_config, flush_wireguard
 from backend.db.init_db import init_db
@@ -58,7 +58,7 @@ def apply_config_from_database():
                     if host is None:
                         raise Exception(f"Service host for service {service.name} not found")
                     allow_link_with_port(peer.address, host.address, service.port)
-                    allow_link(host.address, peer.address)
+                    allow_answer_link(host.address, peer.address)
 
         logging.info("Loading from db subnet to peer links")
         subnets = db.get_subnets()

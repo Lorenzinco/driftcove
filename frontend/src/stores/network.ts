@@ -12,7 +12,8 @@ export const useNetworkStore = defineStore('network', {
         links: [] as Link[],
 
 
-        selection: null as null | { type: 'peer' | 'subnet' | 'link', name:string, id: string },
+    // selection.id semantics for type==='link': stores a pair key "aId::bId" (sorted) representing ALL links between those two peers
+    selection: null as null | { type: 'peer' | 'subnet' | 'link', name:string, id: string },
         tool: 'select' as Tool,
 
 
@@ -37,6 +38,19 @@ export const useNetworkStore = defineStore('network', {
         selectedSubnet(state) {
             return state.selection?.type === 'subnet' ? state.subnets.find(s => s.id === state.selection!.id) || null : null
         },
+        // All links between a selected peer pair (if selection.type==='link')
+        selectedLinks(state) {
+            if (state.selection?.type !== 'link') return [] as Link[];
+            const key = state.selection.id;
+            function pairKey(a:string,b:string){ return a < b ? `${a}::${b}` : `${b}::${a}`; }
+            return state.links.filter(l => pairKey(l.fromId,l.toId) === key);
+        },
+        // Backwards compatibility: first link in selection (if any)
+        selectedLink(): Link | null {
+            // @ts-ignore access root state via this
+            const arr: Link[] = (this as any).selectedLinks;
+            return arr.length ? arr[0] : null;
+        },
     },
 
     actions: {
@@ -59,15 +73,20 @@ export const useNetworkStore = defineStore('network', {
 
 
         deleteSelection() {
-            if (!this.selection) return
+            if (!this.selection) return;
             if (this.selection.type === 'peer') {
-                this.links = this.links.filter(l => l.fromId !== this.selection!.id && l.toId !== this.selection!.id)
-                this.peers = this.peers.filter(p => p.id !== this.selection!.id)
+                this.links = this.links.filter(l => l.fromId !== this.selection!.id && l.toId !== this.selection!.id);
+                this.peers = this.peers.filter(p => p.id !== this.selection!.id);
             } else if (this.selection.type === 'subnet') {
-                this.peers.forEach(p => { if (p.subnetId === this.selection!.id) p.subnetId = null })
-                this.subnets = this.subnets.filter(s => s.id !== this.selection!.id)
+                this.peers.forEach(p => { if (p.subnetId === this.selection!.id) p.subnetId = null });
+                this.subnets = this.subnets.filter(s => s.id !== this.selection!.id);
+            } else if (this.selection.type === 'link') {
+                // selection.id is pair key
+                const pairKey = this.selection.id;
+                function mk(a:string,b:string){ return a < b ? `${a}::${b}` : `${b}::${a}`; }
+                this.links = this.links.filter(l => mk(l.fromId,l.toId) !== pairKey);
             }
-            this.selection = null
+            this.selection = null;
         },
 
 
@@ -181,12 +200,21 @@ export const useNetworkStore = defineStore('network', {
             this.links = payload.links
 
             if (oldSelection) {
-                const stillExists = (
-                    oldSelection.type === 'peer' && this.peers.some(p => p.id === oldSelection.id) ||
-                    oldSelection.type === 'subnet' && this.subnets.some(s => s.id === oldSelection.id) ||
-                    oldSelection.type === 'link' && this.links.some(l => l.id === oldSelection.id)
-                )
-                this.selection = stillExists ? oldSelection : null
+                if (oldSelection.type === 'link') {
+                    function pairKey(a:string,b:string){ return a < b ? `${a}::${b}` : `${b}::${a}`; }
+                    let key = oldSelection.id;
+                    // Legacy case: selection stored a single link id; translate to pairKey if match.
+                    const match = this.links.find(l => l.id === key);
+                    if (match) key = pairKey(match.fromId, match.toId);
+                    const exists = this.links.some(l => pairKey(l.fromId,l.toId) === key);
+                    this.selection = exists ? { ...oldSelection, id: key, name: 'Links' } : null;
+                } else {
+                    const stillExists = (
+                        oldSelection.type === 'peer' && this.peers.some(p => p.id === oldSelection.id) ||
+                        oldSelection.type === 'subnet' && this.subnets.some(s => s.id === oldSelection.id)
+                    );
+                    this.selection = stillExists ? oldSelection : null;
+                }
             }
         },
         sanitizeColors(){

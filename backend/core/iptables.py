@@ -32,6 +32,21 @@ def allow_link_with_port(src:str,dst:str,port:int):
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to allow link {src} -> {dst} on port {port}: {e}")
         raise HTTPException(status_code=500, detail="Failed to allow link")
+    
+def allow_answer_link(src: str, dst: str):
+    """Allow return traffic for an already established connection via iptables."""
+    try:
+        subprocess.run([
+            "iptables", "-A", "FORWARD",
+            "-o", settings.wg_interface,
+            "-s", dst,
+            "-d", src,
+            "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED",
+            "-j", "ACCEPT"
+        ], check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to allow answer link {dst} -> {src}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to allow answer link")
 
 def remove_link(src: str, dst: str):
     """Remove an allow rule from iptables, effectively denying the link."""
@@ -62,6 +77,21 @@ def remove_link_with_port(src: str, dst:str, port:int):
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to remove link {src} -> {dst} on port {port}: {e}")
         raise HTTPException(status_code=500, detail="Failed to remove link")
+    
+def remove_answers_link(src: str, dst: str):
+    """Remove the rule allowing return traffic for an already established connection via iptables."""
+    try:
+        subprocess.run([
+            "iptables", "-D", "FORWARD",
+            "-o", settings.wg_interface,
+            "-s", dst,
+            "-d", src,
+            "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED",
+            "-j", "ACCEPT"
+        ], check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to remove answer link {dst} -> {src}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to remove answer link")
 
 def flush_iptables():
     """Flush all iptables rules."""

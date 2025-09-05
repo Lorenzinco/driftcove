@@ -92,7 +92,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   }
 
   function drawLinks(ctx:CanvasRenderingContext2D, ts:number){
-    const { links, peers, ui } = deps();
+  const { links, peers, ui } = deps();
     frame += (ts - lastTs) * 0.06; lastTs = ts;
     interface Agg { a: Peer; b: Peer; p2p: boolean; services: Set<string>; serviceHostId?: string; linkIds: string[]; repId: string }
     const byPair: Record<string, Agg> = {};
@@ -117,7 +117,9 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       else if (isServiceOnly){ const grad = ctx.createLinearGradient(A.x,A.y,B.x,B.y); grad.addColorStop(0,'rgba(33,150,243,0.9)'); grad.addColorStop(1,'rgba(33,150,243,0.15)'); ctx.strokeStyle=grad; }
       else { ctx.strokeStyle='#4CAF50'; }
       ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke();
-      const active = agg.linkIds.some(id => ui?.hoverLinkId===id || (ui?.selection?.type==='link' && ui.selection.id===id)) || ui?.hoverPeerId===a.id || ui?.hoverPeerId===b.id;
+  // selection.id for links now stores pairKey(a,b); compute once
+  const pair = pairKey(a.id,b.id);
+  const active = agg.linkIds.some(id => ui?.hoverLinkId===id) || (ui?.selection?.type==='link' && ui.selection.id===pair) || ui?.hoverPeerId===a.id || ui?.hoverPeerId===b.id;
       if (active){
         const dx=B.x-A.x, dy=B.y-A.y; const len=Math.hypot(dx,dy)||1; const ux=dx/len, uy=dy/len; const t=(frame/60)%1;
         const drawDot=(pos:number,color:string,r=4)=>{ const px=A.x+ux*len*pos, py=A.y+uy*len*pos; ctx.save(); ctx.beginPath(); ctx.fillStyle=color; ctx.shadowColor=color; ctx.shadowBlur=6; ctx.arc(px,py,r,0,Math.PI*2); ctx.fill(); ctx.restore(); };

@@ -146,6 +146,8 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 				// Finalize
 				this.topology = { peers: peersMeta, subnets: subnetsMeta, links: links.map(l => ({ id: l.id, fromId: l.fromId, toId: l.toId, kind: l.kind, serviceName: (l as any).serviceName })) }
 				useNetworkStore().applyBackendTopology({ peers: peersMeta, subnets: subnetsMeta, links })
+				// Notify canvas to force an immediate redraw (initial real data)
+				window.dispatchEvent(new CustomEvent('topology-updated'))
 				this.lastFetchedAt = Date.now()
 			} catch (e:any) {
 				this.lastError = e?.message || 'Failed to fetch topology'

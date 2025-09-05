@@ -640,7 +640,6 @@ class Database:
             """)
             links_rows = self.cursor.fetchall()
             for row in links_rows:
-                logging.info(f"Link row: {row}")
                 peer1 = Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5])
                 peer2 = Peer(username=row[6], public_key=row[7], preshared_key=row[8], address=row[9], x=row[10], y=row[11])
                 if peer1.address not in links:
@@ -660,7 +659,7 @@ class Database:
                 SELECT p.username, p.public_key, p.preshared_key, p.address, p.x, p.y, s.name, s.department, s.port, s.description
                 FROM peers_services ps
                 JOIN peers p ON ps.peer_id = p.id
-                JOIN services s ON ps.service_id = s.id
+                JOIN services s ON ps.service_id = s.id AND ps.service_port = s.port
             """)
             links_rows = self.cursor.fetchall()
             for row in links_rows:
@@ -668,7 +667,8 @@ class Database:
                 service = Service(name=row[6], department=row[7], port=row[8], description=row[9])
                 if service.name not in links:
                     links[service.name] = []
-                links[service.name].append(peer)
+                if peer not in links[service.name]:
+                    links[service.name].append(peer)
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting links between peers and services: {e}")
         return links

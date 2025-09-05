@@ -32,6 +32,14 @@
             </v-dialog>
           </div>
 
+          <v-divider />
+
+          <div v-if="problematicLinks.length" class="mb-2">
+            <v-alert type="warning" density="comfortable" class="mb-0">
+              <strong>Warning:</strong> This peer has {{ problematicLinks.length }} problematic link(s), those are p2p links to or from hosts to which there are also service links. A service link is a link that only allows for traffic on that service's specific port, if there's also  a peer to peer link to that host this invalidates the filter. Please review the links below.
+            </v-alert>
+          </div>
+
           <v-expansion-panels focusable inset>
             <v-expansion-panel v-if="p2pLinks.length">
               <v-expansion-panel-title>
@@ -97,9 +105,10 @@
                 <v-list v-else density="compact" nav class="py-0">
                   <v-list-item v-for="link in outgoingServiceLinks" :key="link.id">
                     <v-list-item-title>
-                      {{ store.peers.find(p=> p.id=== link.fromId)?.name }}
+                      This peer
                       <v-icon size="16" icon="mdi-arrow-right" class="mx-1 text-primary" />
                       <v-icon size="16" icon="mdi-server" class="mx-1 text-primary" />
+                      {{ store.peers.find(p=> p.id=== link.fromId)?.name }}
                       {{ link.serviceName }}
                     </v-list-item-title>
                     <v-list-item-subtitle v-if="link.serviceName">
@@ -176,6 +185,48 @@ const outgoingServiceLinks = computed(() => {
   const p = peer.value;
   if (!p) return [];
   return store.links.filter(l => l.toId === p.id && l.kind === 'service');
+});
+const problematicLinks = computed(() => {
+  const p = peer.value;
+  if (!p) return [];
+
+  // Pre-compute all host->client service link pairs
+  const servicePairs = new Set<string>();
+  for (const l of store.links) {
+    if (l.kind === 'service') {
+      const hostPeer = store.peers.find(pp => pp.id === l.fromId);
+      if (hostPeer?.host) {
+        servicePairs.add(`${l.fromId}|${l.toId}`); // hostId|clientId
+      }
+    }
+  }
+
+  // A problematic link (we flag the p2p link) is when there is a p2p link
+  // between this peer and a host peer AND a service link between that host and this peer.
+  return store.links.filter(l => {
+    if (l.kind !== 'p2p') return false;
+    if (l.fromId !== p.id && l.toId !== p.id) return false;
+
+    const otherId = l.fromId === p.id ? l.toId : l.fromId;
+    const other = store.peers.find(pp => pp.id === otherId);
+    if (!other) return false;
+
+    // Determine which side is host (either other or current peer)
+    let hostId: string | null = null;
+    let clientId: string | null = null;
+
+    if (other.host) {
+      hostId = otherId;
+      clientId = p.id;
+    } else if (p.host) {
+      hostId = p.id;
+      clientId = otherId;
+    } else {
+      return false; // Neither side is a host, can't be problematic.
+    }
+
+    return servicePairs.has(`${hostId}|${clientId}`);
+  });
 });
 function close(){ open.value=false; }
 
