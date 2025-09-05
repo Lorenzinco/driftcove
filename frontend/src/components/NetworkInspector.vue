@@ -91,7 +91,7 @@
         <template v-else-if="store.selection?.type==='link' && store.selectedLinks && store.selectedLinks.length">
             <div class="mb-2 text-subtitle-2">Links between selected peers ({{ store.selectedLinks.length }})</div>
             <v-alert v-if="store.selectedLinks.some(l=>l.kind==='p2p') && store.selectedLinks.some(l=>l.kind==='service')" type="warning" density="comfortable" class="mb-2">
-                Mixed p2p + service links detected between these peers. Consider simplifying.
+                <strong>Warning:</strong> Mixed p2p + service links detected between these peers. Consider simplifying.
             </v-alert>
             <v-table density="compact" class="mb-2">
                 <thead>
@@ -192,6 +192,15 @@
                 </v-expansion-panel-text>
             </v-expansion-panel>
         </v-expansion-panels>
+            <div class="d-flex mt-3 ga-2 w-100">
+                <v-btn class="flex-grow-1" color="primary" variant="outlined" prepend-icon="mdi-download" @click="exportTopology" :disabled="applying">
+                    Export
+                </v-btn>
+                <v-btn class="flex-grow-1" color="primary" variant="outlined" prepend-icon="mdi-upload" @click="beginImport" :disabled="applying">
+                    Import
+                </v-btn>
+                <input ref="importInput" type="file" accept="application/json" class="d-none" @change="handleImportFile" />
+            </div>
             <div class="mt-3">
                 <v-btn block color="success" :loading="applying" prepend-icon="mdi-content-save" @click="applyToBackend">
                     Save Changes
@@ -219,6 +228,7 @@ const confirmOpen = ref(false)
 const applying = ref(false)
 const applyMessage = ref('')
 const applySuccess = ref(false)
+const importInput = ref<HTMLInputElement | null>(null)
 
 
 // Categorised peer lists
@@ -323,6 +333,62 @@ async function applyToBackend() {
     } finally {
         applying.value = false
     }
+}
+
+function exportTopology(){
+    try {
+        const payload = backend.buildCurrentTopologyPayload()
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `topology-${new Date().toISOString().replace(/[:.]/g,'-')}.json`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        applyMessage.value = 'Topology exported'
+        applySuccess.value = true
+    } catch(e:any){
+        applyMessage.value = e?.message || 'Failed to export topology'
+        applySuccess.value = false
+    }
+}
+
+function beginImport(){
+    importInput.value?.click()
+}
+
+function handleImportFile(ev: Event){
+    const input = ev.target as HTMLInputElement
+    const file = input.files && input.files[0]
+    if(!file) return
+    const reader = new FileReader()
+    applying.value = true
+    applyMessage.value = ''
+    reader.onload = async () => {
+        try {
+            const text = String(reader.result || '')
+            const parsed = JSON.parse(text)
+            const ok = await backend.uploadTopology(parsed)
+            applySuccess.value = !!ok
+            applyMessage.value = ok ? `Imported ${file.name}` : (backend.lastError || 'Import failed')
+            if (ok) await backend.fetchTopology(true)
+        } catch(e:any){
+            applySuccess.value = false
+            applyMessage.value = e?.message || 'Failed to import file'
+        } finally {
+            applying.value = false
+            // reset input so same file can be chosen again
+            if (input) input.value = ''
+        }
+    }
+    reader.onerror = () => {
+        applySuccess.value = false
+        applyMessage.value = 'Failed to read file'
+        applying.value = false
+    }
+    reader.readAsText(file)
 }
 </script>
 

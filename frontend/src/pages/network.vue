@@ -27,6 +27,7 @@
                     <PeerDetailsDialog />
                     <AddSubnetDialog ref="addSubnetDialog" />
                     <LinkTypeDialog ref="linkTypeDialog" />
+                    <CutLinkDialog ref="cutLinkDialog" />
                 </CanvasStage>
     </div>
     </v-sheet>
@@ -54,6 +55,7 @@
     import { useNetworkStore } from '@/stores/network'
     import AddSubnetDialog from '@/components/canvas/overlays/AddSubnetDialog.vue'
     import LinkTypeDialog from '@/components/canvas/overlays/LinkTypeDialog.vue'
+    import CutLinkDialog from '@/components/canvas/overlays/CutLinkDialog.vue'
     import { onMounted, onBeforeUnmount } from 'vue'
     import { useBackendInteractionStore } from '@/stores/backendInteraction'
 
@@ -62,6 +64,7 @@
     const addSubnetDialog = ref<InstanceType<typeof AddSubnetDialog> | null>(null)
     const canvasStage = ref<any>(null)
     const linkTypeDialog = ref<InstanceType<typeof LinkTypeDialog> | null>(null)
+    const cutLinkDialog = ref<InstanceType<typeof CutLinkDialog> | null>(null)
     const backend = useBackendInteractionStore()
 
     function onSubnetClick(e:{ id:string; x:number; y:number }) {
@@ -74,8 +77,19 @@
 
     function handleSubnetDialogClosed(){ canvasStage.value?.clearGhostSubnet?.(); }
     function handleRequestLinkType(e: any){ const { from, to } = e.detail||{}; if (from && to) linkTypeDialog.value?.show(from, to); }
-    onMounted(()=> { backend.startTopologyPolling(1000); window.addEventListener('add-subnet-dialog-closed', handleSubnetDialogClosed); window.addEventListener('request-link-type', handleRequestLinkType) })
-    onBeforeUnmount(()=> { backend.stopTopologyPolling(); window.removeEventListener('add-subnet-dialog-closed', handleSubnetDialogClosed); window.removeEventListener('request-link-type', handleRequestLinkType) })
+    function handleRequestCutLink(e:any){ const detail = e.detail||{}; if (detail && detail.links) cutLinkDialog.value?.show(detail); }
+    onMounted(()=> { 
+        backend.startTopologyPolling(1000); 
+        window.addEventListener('add-subnet-dialog-closed', handleSubnetDialogClosed); 
+        window.addEventListener('request-link-type', handleRequestLinkType);
+        window.addEventListener('request-cut-link', handleRequestCutLink);
+    })
+    onBeforeUnmount(()=> { 
+        backend.stopTopologyPolling(); 
+        window.removeEventListener('add-subnet-dialog-closed', handleSubnetDialogClosed); 
+        window.removeEventListener('request-link-type', handleRequestLinkType);
+        window.removeEventListener('request-cut-link', handleRequestCutLink);
+    })
 </script>
 
 

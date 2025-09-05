@@ -123,12 +123,21 @@ function onMouseDown(e:MouseEvent){
 
   // Link takes precedence over subnet when clicked (so subnet menu doesn't steal click)
   if (linkHit) {
-    function pairKey(a:string,b:string){ return a < b ? `${a}::${b}` : `${b}::${a}`; }
-    const pair = pairKey(linkHit.fromId, linkHit.toId);
-    syncSelection({ type:'link', id: pair });
-    click.down=true; click.worldX=pt.x; click.worldY=pt.y; click.type='link'; click.target=linkHit.id; click.moved=false; (click as any).sx = sx; (click as any).sy = sy;
-    invalidate();
-    return;
+    // For cut tool we don't want to set click.type='link' (would skip empty-branch handler). We also avoid changing selection.
+    if (store.tool==='cut') {
+      click.down = true; click.worldX=pt.x; click.worldY=pt.y; click.type=''; click.target=linkHit.id; click.moved=false; (click as any).sx = sx; (click as any).sy = sy;
+      // Ensure hoverLinkId reflects the link we clicked (in case mouse moved minimally before hover update)
+      ui.hoverLinkId = linkHit.id;
+      invalidate();
+      return;
+    } else {
+      function pairKey(a:string,b:string){ return a < b ? `${a}::${b}` : `${b}::${a}`; }
+      const pair = pairKey(linkHit.fromId, linkHit.toId);
+      syncSelection({ type:'link', id: pair });
+      click.down=true; click.worldX=pt.x; click.worldY=pt.y; click.type='link'; click.target=linkHit.id; click.moved=false; (click as any).sx = sx; (click as any).sy = sy;
+      invalidate();
+      return;
+    }
   }
 
   if (store.tool==='connect' && peer){
@@ -148,6 +157,11 @@ function onMouseDown(e:MouseEvent){
   }
 
   if (peer){
+    if (store.tool==='cut') {
+      // In cut mode, peer clicks should do nothing.
+      invalidate();
+      return;
+    }
     syncSelection({ type:'peer', id: peer.id });
     interactions.drag.active=true; interactions.drag.type='peer'; interactions.drag.id=peer.id; interactions.drag.offsetX = pt.x - peer.x; interactions.drag.offsetY = pt.y - peer.y;
     click.down=true; click.worldX=pt.x; click.worldY=pt.y; click.target=peer.id; click.type='peer'; click.moved=false;
@@ -288,12 +302,26 @@ function onMouseMove(e:MouseEvent){
 function onMouseUp(){
   store.pan.dragging=false; interactions.drag.active=false;
   if (interactions.resizeDrag.active){ interactions.resizeDrag.active=false; invalidate(); }
-  if (click.down && !click.moved && click.type==='peer' && click.target){ /* open peer dialog through store */ store.openPeerDetails(click.target); }
-  if (click.down && !click.moved && click.type==='' && ui.hoverLinkId){
+  // Open peer details only when in select tool mode (avoid in cut/connect/add-subnet modes)
+  if (click.down && !click.moved && click.type==='peer' && click.target && store.tool==='select'){
+    /* open peer dialog through store */
+    store.openPeerDetails(click.target);
+  }
+  if (click.down && !click.moved && ((click.type==='' && ui.hoverLinkId) || (store.tool==='cut' && ui.hoverLinkId))){
+    if (store.tool==='cut') {
+      const baseLink = store.links.find(l=> l.id===ui.hoverLinkId);
+      if (baseLink){
+        function pairKey(a:string,b:string){ return a < b ? `${a}::${b}` : `${b}::${a}`; }
+        const pk = pairKey(baseLink.fromId, baseLink.toId);
+        const related = store.links.filter(l=> pairKey(l.fromId,l.toId)===pk);
+        window.dispatchEvent(new CustomEvent('request-cut-link', { detail: { pairKey: pk, links: related } }));
+      }
+    } else {
     const real = store.links.find(l=> l.id===ui.hoverLinkId);
     if (real){
       function pairKey(a:string,b:string){ return a < b ? `${a}::${b}` : `${b}::${a}`; }
       syncSelection({ type:'link', id: pairKey(real.fromId, real.toId) });
+    }
     }
   }
   if (click.down && !click.moved && click.type==='subnet' && click.target){

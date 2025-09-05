@@ -36,7 +36,7 @@
 
           <div v-if="problematicLinks.length" class="mb-2">
             <v-alert type="warning" density="comfortable" class="mb-0">
-              <strong>Warning:</strong> This peer has {{ problematicLinks.length }} problematic link(s), those are p2p links to or from hosts to which there are also service links. A service link is a link that only allows for traffic on that service's specific port, if there's also  a peer to peer link to that host this invalidates the filter. Please review the links below.
+              <strong>Warning:</strong> {{problematicLinks.length}} Mixed p2p + service link(s) detected. Consider simplifying.
             </v-alert>
           </div>
 
@@ -62,6 +62,11 @@
                     <v-list-item-subtitle>
                       
                     </v-list-item-subtitle>
+                    <template #append>
+                      <v-btn :loading="cutDialog.loading && cutDialog.link?.id===link.id" density="comfortable" size="small" variant="text" icon color="error" @click="openCutDialogP2P(link)">
+                        <v-icon icon="mdi-content-cut" />
+                      </v-btn>
+                    </template>
                   </v-list-item>
                 </v-list>
               </v-expansion-panel-text>
@@ -87,6 +92,11 @@
                     </v-list-item-title>
                     <v-list-item-subtitle v-if="link.serviceName">
                     </v-list-item-subtitle>
+                    <template #append>
+                      <v-btn :disabled="!link.serviceName" :loading="cutDialog.loading && cutDialog.link?.id===link.id" density="comfortable" size="small" variant="text" icon color="error" @click="openCutDialogServiceHost(link)">
+                        <v-icon icon="mdi-content-cut" />
+                      </v-btn>
+                    </template>
                   </v-list-item>
                 </v-list>
               </v-expansion-panel-text>
@@ -113,6 +123,11 @@
                     </v-list-item-title>
                     <v-list-item-subtitle v-if="link.serviceName">
                     </v-list-item-subtitle>
+                    <template #append>
+                      <v-btn :disabled="!link.serviceName" :loading="cutDialog.loading && cutDialog.link?.id===link.id" density="comfortable" size="small" variant="text" icon color="error" @click="openCutDialogServiceConsumer(link)">
+                        <v-icon icon="mdi-content-cut" />
+                      </v-btn>
+                    </template>
                   </v-list-item>
                 </v-list>
               </v-expansion-panel-text>
@@ -153,12 +168,24 @@
     </v-card>
   </v-dialog>
   <AddServiceDialog ref="addServiceDialogRef" />
+  <ConfirmCutLinkDialog
+    v-model="cutDialog.open"
+    :link="cutDialog.link"
+    :mode="cutDialog.mode"
+    :peer-a="peer?.name"
+    :peer-b="cutDialog.mode==='p2p' ? otherPeerName : (cutDialog.mode==='service-host' ? consumerPeerName : (cutDialog.mode==='service-consumer' ? hostPeerName : ''))"
+    :service-name="cutDialog.link?.serviceName"
+    :problematic="cutDialog.mode==='p2p' && problematicLinks.some(l=> l.id===cutDialog.link?.id)"
+    :loading="cutDialog.loading"
+    @confirm="performCut"
+  />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import AddServiceDialog from './AddServiceDialog.vue';
+import ConfirmCutLinkDialog from './ConfirmCutLinkDialog.vue';
 import { useNetworkStore } from '@/stores/network';
 import { useBackendInteractionStore } from '@/stores/backendInteraction';
 
@@ -249,6 +276,44 @@ async function downloadConfig(){
       setTimeout(()=> { document.body.removeChild(a); URL.revokeObjectURL(url); },0);
     }
   } finally { dlLoading.value=false; }
+}
+
+// --- Cut link functionality with dialog ---
+interface CutDialogState { open:boolean; loading:boolean; link:any|null; mode:'p2p'|'service-host'|'service-consumer'|'service-generic'|'' }
+const cutDialog = ref<CutDialogState>({ open:false, loading:false, link:null, mode:'' });
+
+const otherPeerName = computed(()=> {
+  if (!peer.value || !cutDialog.value.link || cutDialog.value.mode!=='p2p') return '';
+  const l = cutDialog.value.link; const otherId = l.fromId===peer.value.id ? l.toId : l.fromId;
+  return store.peers.find(p=> p.id===otherId)?.name || '';
+});
+const consumerPeerName = computed(()=> {
+  if (!peer.value || !cutDialog.value.link || cutDialog.value.mode!=='service-host') return '';
+  const l=cutDialog.value.link; return store.peers.find(p=> p.id===l.toId)?.name || '';
+});
+const hostPeerName = computed(()=> {
+  if (!peer.value || !cutDialog.value.link || cutDialog.value.mode!=='service-consumer') return '';
+  const l=cutDialog.value.link; return store.peers.find(p=> p.id===l.fromId)?.name || '';
+});
+
+function openCutDialogP2P(link:any){ cutDialog.value = { open:true, loading:false, link, mode:'p2p' }; }
+function openCutDialogServiceHost(link:any){ cutDialog.value = { open:true, loading:false, link, mode:'service-host' }; }
+function openCutDialogServiceConsumer(link:any){ cutDialog.value = { open:true, loading:false, link, mode:'service-consumer' }; }
+function closeCutDialog(){ if (cutDialog.value.loading) return; cutDialog.value.open=false; }
+async function performCut(){
+  if (!peer.value || !cutDialog.value.link) return;
+  const l = cutDialog.value.link; cutDialog.value.loading=true;
+  try {
+    if (cutDialog.value.mode==='p2p'){
+      const otherId = l.fromId===peer.value.id ? l.toId : l.fromId; const other = store.peers.find(p=> p.id===otherId); if (!other) return;
+      await backend.disconnectPeers(peer.value.name, other.name);
+    } else if (cutDialog.value.mode==='service-host'){
+      const consumer = store.peers.find(p=> p.id===l.toId); if (!consumer || !l.serviceName) return;
+      await backend.disconnectPeerFromService(consumer.name, l.serviceName);
+    } else if (cutDialog.value.mode==='service-consumer'){
+      if (!l.serviceName) return; await backend.disconnectPeerFromService(peer.value.name, l.serviceName);
+    }
+  } finally { cutDialog.value.loading=false; cutDialog.value.open=false; }
 }
 </script>
 

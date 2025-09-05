@@ -263,8 +263,14 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 		async connectPeers(peer1: string, peer2: string){
 			try { this.lastError=null; await getClient().post('/api/peer/connect', null, { params:{ peer1_username: peer1, peer2_username: peer2 }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to connect peers'; return false }
 		},
+		async disconnectPeers(peer1: string, peer2: string){
+			try { this.lastError=null; await getClient().delete('/api/peer/disconnect', { params:{ peer1_username: peer1, peer2_username: peer2 }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to disconnect peers'; return false }
+		},
 		async connectPeerToService(username: string, serviceName: string){
 			try { this.lastError=null; await getClient().post('/api/service/connect', null, { params:{ username, service_name: serviceName }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to connect peer to service'; return false }
+		},
+		async disconnectPeerFromService(username: string, serviceName: string){
+			try { this.lastError=null; await getClient().delete('/api/service/disconnect', { params:{ username, service_name: serviceName }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to disconnect peer from service'; return false }
 		},
 		async fetchPeerConfig(username: string){
 			try { this.lastError=null; const { data } = await getClient().get<{configuration:string}>('/api/peer/config', { params:{ username } }); return data.configuration } catch(e:any){ this.lastError = e?.message || 'Failed to fetch config'; return null }
@@ -279,10 +285,10 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 			} catch(e:any){ this.lastError = e?.message || 'Failed to create peer'; return null }
 		},
 		// Create service bound to existing peer (host). Returns boolean success.
-		async createService(username: string, serviceName: string, department: string, port: number){
+		async createService(username: string, serviceName: string, department: string, port: number, description: string){
 			try {
 				this.lastError = null
-				const { data } = await getClient().post<{ message: string }>('/api/service/create', null, { params: { service_name: serviceName, department, username, port } })
+				const { data } = await getClient().post<{ message: string }>('/api/service/create', null, { params: { service_name: serviceName, department, username, port, description } })
 				if (data?.message && /already exists/i.test(data.message)) {
 					this.lastError = data.message
 					return false

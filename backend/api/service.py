@@ -13,7 +13,7 @@ router = APIRouter(tags=["service"])
 
 
 @router.post("/create",tags=["service"])
-def create_service(service_name:str, department:str, username:str, port:int, _: Annotated[str, Depends(verify_token)]):
+def create_service(service_name:str, department:str, username:str, port:int, _: Annotated[str, Depends(verify_token)], description: str = ""):
     """
     Creates a service, pairs it with an existing peer, the peer in question is identified by the address, the service will be created with the provided port. If the service already exists, nothing happens.
     If you wish for selected peers to be able to connect to the service, you need to use the connect endpoint.
@@ -41,7 +41,8 @@ def create_service(service_name:str, department:str, username:str, port:int, _: 
                             x=peer.x,
                             y=peer.y,
                             department=department,
-                            port=port)
+                            port=port,
+                            description=description)
             db.create_service(peer,service)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to create service: {e}")
@@ -117,9 +118,18 @@ def service_disconnect(username: str, service_name: str, _: Annotated[str, Depen
             if service is None:
                 raise HTTPException(status_code=404, detail="Service not found")
             
+            host = db.get_service_host(service)
+            if host is None:
+                raise HTTPException(status_code=404, detail="Service host not found")
+            
+             # Check if the peer is linked to the service
+            linked_peers = db.get_service_peers(service)
+            if peer not in linked_peers:
+                raise HTTPException(status_code=400, detail=f"Peer {username} is not connected to service {service_name}")
+            
             logging.info(f"Disconnecting peer {peer.username} from service {service.name}")
-            remove_link_with_port(peer.address, service.address, service.port)
-            remove_answers_link(service.address, peer.address)
+            remove_link_with_port(peer.address, host.address, service.port)
+            remove_answers_link(host.address, peer.address)
             db.remove_peer_service_link(peer, service)
     
         except Exception as e:

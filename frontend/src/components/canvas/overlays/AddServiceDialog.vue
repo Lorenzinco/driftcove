@@ -12,6 +12,7 @@
           <v-text-field v-model="serviceName" label="Service Name" :disabled="loading" required density="comfortable" autofocus />
           <v-text-field v-model="department" label="Department" :disabled="loading" density="comfortable" />
           <v-text-field v-model.number="port" label="Port" :disabled="loading" type="number" min="1" max="65535" required density="comfortable" />
+          <v-textarea v-model="description" label="Description" :disabled="loading" rows="2" auto-grow density="comfortable" />
           <div class="text-caption text-medium-emphasis mb-3">
             Name must be unique across the network. Port must be free on this peer.
           </div>
@@ -43,6 +44,7 @@ const error = ref('')
 const serviceName = ref('')
 const department = ref('')
 const port = ref<number | null>(null)
+const description = ref('')
 const targetPeerId = ref<string | null>(null)
 const conflicts = ref<string[]>([])
 const formRef = ref()
@@ -58,6 +60,7 @@ function show(peerId:string){
   serviceName.value=''
   department.value=''
   port.value=null
+  description.value=''
   error.value=''
   conflicts.value=[]
   open.value=true
@@ -86,7 +89,7 @@ async function submit(){
   if (!validateLocal()) return
   loading.value=true
   try {
-    const ok = await backend.createService(peer.value.name, serviceName.value.trim(), department.value.trim(), Number(port.value))
+  const ok = await backend.createService(peer.value.name, serviceName.value.trim(), department.value.trim(), Number(port.value), description.value.trim())
     if (!ok){ error.value = backend.lastError || 'Failed to create service'; return }
     open.value=false
   } catch(e:any){

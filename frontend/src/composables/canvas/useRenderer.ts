@@ -154,7 +154,64 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   }
 
   function drawPeers(ctx:CanvasRenderingContext2D){
-    const { peers, panzoom, theme, ui } = deps();
+    const { peers, panzoom, theme, ui, links } = deps() as any;
+    // Determine problematic peers (participate in at least one mixed p2p + service pair)
+    const problematicPeers = new Set<string>();
+    (function computeProblematic(){
+      interface Agg { a: Peer; b: Peer; p2p: boolean; services: Set<string> }
+      const byPair: Record<string, Agg> = {};
+      function pairKey(aId:string,bId:string){ return aId < bId ? `${aId}::${bId}` : `${bId}::${aId}`; }
+      for (const l of links as Link[]) {
+        if (l.kind==='membership') continue;
+        const a = peers.find((p:Peer)=>p.id===l.fromId); const b = peers.find((p:Peer)=>p.id===l.toId); if (!a||!b) continue;
+        const key = pairKey(a.id,b.id);
+        let agg = byPair[key]; if (!agg) agg = byPair[key] = { a, b, p2p:false, services:new Set() };
+        if (l.kind==='p2p') agg.p2p = true; else if (l.kind==='service' && l.serviceName) agg.services.add(l.serviceName);
+      }
+      for (const k of Object.keys(byPair)){
+        const agg = byPair[k]; if (agg.p2p && agg.services.size>0){ problematicPeers.add(agg.a.id); problematicPeers.add(agg.b.id); }
+      }
+    })();
+
+    function drawWifiOffBadge(x:number,y:number,z:number){
+      const r = 8 * z; // outer badge radius
+      ctx.save();
+      // Badge background
+      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle='#4d4d4d'; ctx.fill();
+      ctx.strokeStyle='#7a7a7a'; ctx.lineWidth=1.1*z; ctx.stroke();
+      // Upward facing WiFi arcs (smile orientation). Dot anchored near bottom.
+      const dotY = y + r*0.45; // push dot toward bottom of badge
+      const arcCenterY = y + r*0.25; // slight upward shift so arcs sit above dot
+      ctx.strokeStyle='#e4e4e4';
+      ctx.lineCap='round';
+      const radii = [r-7*z, r-5*z, r-3*z]; // small -> large
+      for (let i=0;i<radii.length;i++) {
+        const rad = radii[i]; if (rad <= 0) continue;
+        ctx.beginPath();
+        // Angles 225° to 315° (1.25π to 1.75π) produce an upward opening arc
+        ctx.lineWidth = 1.2*z;
+        ctx.arc(x, arcCenterY, rad, Math.PI*1.25, Math.PI*1.75);
+        ctx.stroke();
+      }
+      // Origin dot
+      ctx.beginPath(); ctx.arc(x, dotY, 1.0*z, 0, Math.PI*2); ctx.fillStyle='#f0f0f0'; ctx.fill();
+      // Slash (thinner) to indicate disabled
+      ctx.beginPath(); ctx.strokeStyle='#cfcfcf'; ctx.lineWidth=1*z; ctx.moveTo(x - r*0.62, y + r*0.58); ctx.lineTo(x + r*0.62, y - r*0.58); ctx.stroke();
+      ctx.restore();
+    }
+    function drawExclamationBadge(x:number,y:number,z:number){
+      const badgeR = 7 * z;
+      ctx.save(); ctx.beginPath(); ctx.arc(x, y, badgeR, 0, Math.PI*2);
+      ctx.fillStyle = '#d3ad2fff'; ctx.fill();
+      ctx.font = `${9*z}px Roboto, sans-serif`; ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('!', x, y+0.5*z);
+      ctx.restore();
+    }
+    // Build set of peers having at least one non-membership link (p2p/service) — retained in case future styling needs it.
+    const nonMembershipLinked = new Set<string>();
+    for (const l of links as Link[]) {
+      if (l.kind==='membership') continue;
+      nonMembershipLinked.add(l.fromId); nonMembershipLinked.add(l.toId);
+    }
     const peerColor = theme?.colors.peer || '#7AD7F0';
     for (const n of peers){
       const S = toScreen(n.x, n.y);
@@ -162,7 +219,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       const stroke = n.allowed?peerColor:'#888';
       const fill = n.allowed?'rgba(85, 148, 165, 1)':'rgba(90, 90, 90, 1)';
       const z = panzoom.zoom;
-      if (isHost) {
+  if (isHost) {
         // Server icon (stacked chassis)
         const rackW = 48 * z;
         const unitH = 12 * z;
@@ -174,21 +231,32 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
         ctx.save();
         ctx.beginPath(); if ((ctx as any).roundRect) (ctx as any).roundRect(S.x - rackW/2 - 4*z, topY - 6*z, rackW + 8*z, totalH + 12*z, 6*z); else ctx.rect(S.x - rackW/2 - 4*z, topY - 6*z, rackW + 8*z, totalH + 12*z);
         ctx.fillStyle = 'rgba(40,40,40,1)'; ctx.fill();
+        // Sequentially allocate service dots across units.
+        const serviceCount = Object.keys(n.services||{}).length;
+        const firstUnitCapacity = 4;
+        const otherUnitCapacity = 5;
+        let remaining = serviceCount;
         for (let i=0;i<units;i++){
           const y = topY + i*(unitH+gap);
           ctx.beginPath(); if ((ctx as any).roundRect) (ctx as any).roundRect(S.x - rackW/2, y, rackW, unitH, 4*z); else ctx.rect(S.x - rackW/2, y, rackW, unitH);
           ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth=2; ctx.fill(); ctx.stroke();
-          // Drive / indicator lights
-          const lights = Math.min(6, Object.keys(n.services||{}).length || 3);
-            for (let l=0;l<lights;l++){
-              const lx = S.x - rackW/2 + 8*z + l*8*z;
-              const ly = y + unitH/2;
-              ctx.beginPath(); ctx.arc(lx, ly, 1.8*z, 0, Math.PI*2); ctx.fillStyle = l % 2 === 0 ? '#2ECC71' : '#F1C40F'; ctx.fill();
-            }
+          const capacity = i===0 ? firstUnitCapacity : otherUnitCapacity;
+          const drawLights = Math.min(capacity, remaining);
+          for (let l=0; l<drawLights; l++) {
+            const lx = S.x - rackW/2 + 8*z + l*8*z;
+            const ly = y + unitH/2;
+            ctx.beginPath(); ctx.arc(lx, ly, 1.8*z, 0, Math.PI*2); ctx.fillStyle = (l % 2 === 0) ? '#2ECC71' : '#F1C40F'; ctx.fill();
+          }
+          remaining -= drawLights;
           // Power button on top unit
           if (i===0){ ctx.beginPath(); ctx.arc(S.x + rackW/2 - 10*z, y + unitH/2, 3*z, 0, Math.PI*2); ctx.fillStyle = stroke; ctx.fill(); ctx.beginPath(); ctx.arc(S.x + rackW/2 - 10*z, y + unitH/2, 1.3*z, 0, Math.PI*2); ctx.fillStyle='#181818'; ctx.fill(); }
         }
         ctx.restore();
+  // Connection + problematic badges
+  const hostBadgeX = S.x + rackW/2 + 4*z;
+  const hostBadgeY = S.y + 24*z;
+  if (!n.allowed) drawWifiOffBadge(hostBadgeX, hostBadgeY, z);
+  if (problematicPeers.has(n.id)) drawExclamationBadge(hostBadgeX, hostBadgeY - (n.allowed?0: (14*z)), z); // offset if stacked
         const labelY = topY + totalH/2 + 10*z;
         ctx.save(); ctx.fillStyle='rgba(255,255,255,0.92)'; ctx.font='600 12px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText(n.name, S.x, labelY); ctx.restore();
         if (ui?.hoverPeerId === n.id){ ctx.save(); ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.font='500 11px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText((n as any).ip || '(no ip)', S.x, labelY + 14); ctx.restore(); }
@@ -219,6 +287,11 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
         // Base
         ctx.beginPath(); const baseY = standY + standH + 1*z; ctx.rect(S.x - baseW/2, baseY, baseW, 3*z); ctx.fillStyle=stroke; ctx.fill();
         ctx.restore();
+  // Badges for client/monitor icon
+  const clientBadgeX = S.x + monitorW/2 + 4*z;
+  const clientBadgeY = S.y; // center vertically around S.y
+  if (!n.allowed) drawWifiOffBadge(clientBadgeX, clientBadgeY, z);
+  if (problematicPeers.has(n.id)) drawExclamationBadge(clientBadgeX, clientBadgeY - (n.allowed?0: (14*z)), z);
         ctx.save(); ctx.fillStyle='rgba(255,255,255,0.92)'; ctx.font='600 12px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText(n.name, S.x, labelY); ctx.restore();
         if (ui?.hoverPeerId === n.id) { ctx.save(); ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.font='500 11px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText((n as any).ip || '(no ip)', S.x, labelY + 14); ctx.restore(); }
       }

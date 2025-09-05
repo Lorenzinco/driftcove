@@ -13,6 +13,8 @@ declare module 'vue' {
     AddSubnetDialog: typeof import('./components/canvas/overlays/AddSubnetDialog.vue')['default']
     AppFooter: typeof import('./components/AppFooter.vue')['default']
     CanvasStage: typeof import('./components/canvas/CanvasStage.vue')['default']
+    ConfirmCutLinkDialog: typeof import('./components/canvas/overlays/ConfirmCutLinkDialog.vue')['default']
+    CutLinkDialog: typeof import('./components/canvas/overlays/CutLinkDialog.vue')['default']
     HelloWorld: typeof import('./components/HelloWorld.vue')['default']
     LinkTypeDialog: typeof import('./components/canvas/overlays/LinkTypeDialog.vue')['default']
     NetworkCanvas: typeof import('./components/NetworkCanvas.vue')['default']
