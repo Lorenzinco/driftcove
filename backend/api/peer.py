@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from backend.core.config import verify_token, settings
 from backend.core.lock import lock
 from backend.core.database import db
-from backend.core.iptables import allow_link, remove_link
+from backend.core.iptables import allow_link, remove_link, remove_link_with_port, remove_answers_link
 from backend.core.models import Peer
 from backend.core.state_manager import state_manager
 from backend.core.logger import logging
@@ -115,10 +115,29 @@ def delete_peer(username: str, _: Annotated[str, Depends(verify_token)]):
                 raise HTTPException(status_code=404, detail="Peer not found")
             peer_subnets = db.get_peers_links_to_subnets(peer)
             peer_services = db.get_peer_services(peer)
+            logging.info(f"Removing peer {peer} from the database")
+            logging.info(f"{peer_services}")
+
+            # remove links for the subnets the peer is part of
             for subnet in peer_subnets:
                 remove_link(peer.address, subnet.subnet)
+
+            # remove links for the services the peer is part of
             for service in peer_services:
-                remove_link(peer.address, service.address)
+                service_host = db.get_service_host(service)
+                if service_host is None:
+                    continue
+                remove_link_with_port(peer.address, service_host.address, service.port)
+                remove_answers_link(service_host.address, peer.address)
+
+            # remove links for the services that the peer hosts
+            hosted_services = db.get_services_by_host(peer)
+            for service in hosted_services:
+                service_peers = db.get_service_peers(service)
+                for service_peer in service_peers:
+                    remove_link_with_port(service_peer.address, peer.address, service.port)
+                    remove_answers_link(peer.address, service_peer.address)
+            
             remove_from_wg_config(peer)
             db.remove_peer(peer)
         except Exception as e:

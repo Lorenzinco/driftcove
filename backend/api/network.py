@@ -65,6 +65,22 @@ def get_topology(_: Annotated[str, Depends(verify_token)])->dict:
         raise HTTPException(status_code=500, detail=f"Topology get failed: {e}")
     return {"topology": topology}
 
+@router.get("/iptables_rules",tags=["debug"])
+def get_iptables_rules(_: Annotated[str, Depends(verify_token)]):
+    """
+    Get the current iptables rules.
+    This endpoint will return all the iptables rules that are currently in the system.
+    """
+    import subprocess
+    try:
+        result = subprocess.run(["iptables", "-L", "FORWARD", "-n"], capture_output=True, text=True, check=True)
+        rules = result.stdout
+        logging.info("Retrieved iptables rules.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to get iptables rules: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get iptables rules")
+    return {"iptables_rules": rules}
+
 @router.post("/topology",tags=["network"])
 def upload_topology(topology: Topology, _: Annotated[str, Depends(verify_token)]):
     """

@@ -275,6 +275,16 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 		async fetchPeerConfig(username: string){
 			try { this.lastError=null; const { data } = await getClient().get<{configuration:string}>('/api/peer/config', { params:{ username } }); return data.configuration } catch(e:any){ this.lastError = e?.message || 'Failed to fetch config'; return null }
 		},
+		// Delete a peer by username
+		async deletePeer(username: string){
+			try {
+				this.lastError = null
+				// Use trailing slash to avoid 307 redirect to /peer/ which can bypass the dev proxy
+				await getClient().delete('/api/peer/', { params: { username } })
+				await this.fetchTopology(true)
+				return true
+			} catch(e:any){ this.lastError = e?.message || 'Failed to delete peer'; return false }
+		},
 		// Create peer (used by AddPeerDialog). Backend assigns keys and maybe address if omitted.
 		async createPeer(username: string, subnetCidr: string, address?: string){
 			try {

@@ -60,8 +60,8 @@ def remove_link(src: str, dst: str):
         ], check=True)
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to remove link {src} -> {dst}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to remove link")
-    
+        raise HTTPException(status_code=500, detail=f"Failed to remove link {src} -> {dst}: {e}")
+
 def remove_link_with_port(src: str, dst:str, port:int):
     """Remove an allow rule from iptables with a specific port, destroying the link between a peer and a service."""
     try:
@@ -76,8 +76,8 @@ def remove_link_with_port(src: str, dst:str, port:int):
         ], check=True)
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to remove link {src} -> {dst} on port {port}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to remove link")
-    
+        raise HTTPException(status_code=500, detail=f"Failed to remove link {src} -> {dst} on port {port}: {e}")
+
 def remove_answers_link(src: str, dst: str):
     """Remove the rule allowing return traffic for an already established connection via iptables."""
     try:
@@ -91,7 +91,7 @@ def remove_answers_link(src: str, dst: str):
         ], check=True)
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to remove answer link {dst} -> {src}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to remove answer link")
+        raise HTTPException(status_code=500, detail=f"Failed to remove answer link {dst} -> {src}: {e}")
 
 def flush_iptables():
     """Flush all iptables rules."""

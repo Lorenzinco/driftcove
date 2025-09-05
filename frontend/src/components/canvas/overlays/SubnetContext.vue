@@ -4,6 +4,7 @@
     :x="menu.x"
     :y="menu.y"
     @create-peer="openAddPeer(menu.subnetId)"
+  @create-subnet="openCreateSubnet()"
     @info="openInfo(menu.subnetId)"
   />
   <div v-if="menu.open" class="subnet-menu-backdrop" @mousedown.stop @click="hideMenu" />
@@ -34,6 +35,15 @@ function hideMenu(){ menu.open=false; }
 function openAddPeer(id:string){ hideMenu(); addPeerDialog.value?.show(id); }
 
 function openInfo(id:string){ hideMenu(); infoDialog.value?.show(id); }
+
+function openCreateSubnet(){
+  hideMenu();
+  // Use the same flow as clicking on canvas with add-subnet: emit global event consumed by page
+  const x = menu.x, y = menu.y;
+  // We need world coords; page handler already expects worldX/worldY from click flow.
+  // Fallback: let page convert using last pointer; we can dispatch a custom event.
+  window.dispatchEvent(new CustomEvent('request-add-subnet-at-screen', { detail: { screenX: x, screenY: y } }));
+}
 
 function onKey(e:KeyboardEvent){ if (e.key==='Escape' && menu.open) hideMenu(); }
 onMounted(()=> window.addEventListener('keydown', onKey));

@@ -22,8 +22,10 @@
 
 
     <div style="height: 77vh;" class="px-3 pb-3 w-100">
-                <CanvasStage ref="canvasStage" @subnet-click="onSubnetClick" @add-subnet-request="onAddSubnetRequest">
+                <CanvasStage ref="canvasStage" @subnet-click="onSubnetClick" @peer-click="onPeerClick" @canvas-context="onCanvasContext" @add-subnet-request="onAddSubnetRequest">
                     <SubnetContext ref="subnetContext" />
+                    <NetworkContext ref="networkContext" />
+                    <PeerContext ref="peerContext" />
                     <PeerDetailsDialog />
                     <AddSubnetDialog ref="addSubnetDialog" />
                     <LinkTypeDialog ref="linkTypeDialog" />
@@ -52,6 +54,8 @@
     import CanvasStage from '@/components/canvas/CanvasStage.vue'
     import SubnetContext from '@/components/canvas/overlays/SubnetContext.vue'
     import PeerDetailsDialog from '@/components/canvas/overlays/PeerDetailsDialog.vue'
+    import PeerContext from '@/components/canvas/overlays/PeerContext.vue'
+    import NetworkContext from '@/components/canvas/overlays/NetworkContext.vue'
     import { useNetworkStore } from '@/stores/network'
     import AddSubnetDialog from '@/components/canvas/overlays/AddSubnetDialog.vue'
     import LinkTypeDialog from '@/components/canvas/overlays/LinkTypeDialog.vue'
@@ -61,6 +65,8 @@
 
     const store = useNetworkStore()
     const subnetContext = ref<InstanceType<typeof SubnetContext> | null>(null)
+    const peerContext = ref<InstanceType<typeof PeerContext> | null>(null)
+    const networkContext = ref<InstanceType<typeof NetworkContext> | null>(null)
     const addSubnetDialog = ref<InstanceType<typeof AddSubnetDialog> | null>(null)
     const canvasStage = ref<any>(null)
     const linkTypeDialog = ref<InstanceType<typeof LinkTypeDialog> | null>(null)
@@ -73,22 +79,43 @@
         if (!e.id) { subnetContext.value?.hideMenu?.(); return; }
         subnetContext.value?.showMenu(e);
     }
+    function onPeerClick(e:{ id:string; x:number; y:number }){
+        if (store.tool !== 'select') return;
+        if (!e.id) { peerContext.value?.hideMenu?.(); return; }
+        const x = typeof e.x === 'number' ? e.x : (window as any).__lastPointerScreen?.x || 0;
+        const y = typeof e.y === 'number' ? e.y : (window as any).__lastPointerScreen?.y || 0;
+        peerContext.value?.showMenu({ id: e.id, x, y });
+    }
+    function onCanvasContext(e:{ x:number; y:number }){
+        if (store.tool !== 'select') return;
+        networkContext.value?.showMenu(e);
+    }
     function onAddSubnetRequest(pos:{ worldX:number; worldY:number }) { addSubnetDialog.value?.showAt(pos.worldX, pos.worldY) }
 
     function handleSubnetDialogClosed(){ canvasStage.value?.clearGhostSubnet?.(); }
     function handleRequestLinkType(e: any){ const { from, to } = e.detail||{}; if (from && to) linkTypeDialog.value?.show(from, to); }
     function handleRequestCutLink(e:any){ const detail = e.detail||{}; if (detail && detail.links) cutLinkDialog.value?.show(detail); }
+    function handleRequestAddSubnetAtScreen(e:any){
+        const { screenX, screenY } = e.detail || {};
+        if (typeof screenX !== 'number' || typeof screenY !== 'number') return;
+        // Convert screen to world using canvas stage helpers: approximate via store pan/zoom
+        const worldX = (screenX - store.pan.x)/store.zoom;
+        const worldY = (screenY - store.pan.y)/store.zoom;
+        addSubnetDialog.value?.showAt(worldX, worldY);
+    }
     onMounted(()=> { 
         backend.startTopologyPolling(1000); 
         window.addEventListener('add-subnet-dialog-closed', handleSubnetDialogClosed); 
         window.addEventListener('request-link-type', handleRequestLinkType);
         window.addEventListener('request-cut-link', handleRequestCutLink);
+        window.addEventListener('request-add-subnet-at-screen', handleRequestAddSubnetAtScreen);
     })
     onBeforeUnmount(()=> { 
         backend.stopTopologyPolling(); 
         window.removeEventListener('add-subnet-dialog-closed', handleSubnetDialogClosed); 
         window.removeEventListener('request-link-type', handleRequestLinkType);
         window.removeEventListener('request-cut-link', handleRequestCutLink);
+        window.removeEventListener('request-add-subnet-at-screen', handleRequestAddSubnetAtScreen);
     })
 </script>
 

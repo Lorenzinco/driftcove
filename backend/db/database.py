@@ -569,7 +569,7 @@ class Database:
                 SELECT p.username, p.public_key, p.preshared_key, p.address, p.x, p.y
                 FROM peers p
                 JOIN peers_services ps ON p.id = ps.peer_id
-                JOIN services s ON ps.service_id = s.id
+                JOIN services s ON ps.service_id = s.id AND ps.service_port = s.port
                 WHERE s.name = ?
             """, (service.name,))
             peers_rows = self.cursor.fetchall()
@@ -589,7 +589,7 @@ class Database:
             self.cursor.execute("""
                 SELECT s.name, s.department, s.port, s.description
                 FROM services s
-                JOIN peers_services ps ON s.id = ps.service_id
+                JOIN peers_services ps ON s.id = ps.service_id AND s.port = ps.service_port
                 JOIN peers p ON ps.peer_id = p.id
                 WHERE p.public_key = ?
             """, (peer.public_key,))

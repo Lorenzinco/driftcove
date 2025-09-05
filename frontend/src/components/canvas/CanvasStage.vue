@@ -12,7 +12,7 @@
 </template>
 
 <script setup lang="ts">
-const emit = defineEmits<{ (e:'subnet-click', payload:{ id:string; x:number; y:number }): void; (e:'add-subnet-request', payload:{ worldX:number; worldY:number; screenX:number; screenY:number }): void }>();
+const emit = defineEmits<{ (e:'subnet-click', payload:{ id:string; x:number; y:number }): void; (e:'peer-click', payload:{ id:string; x:number; y:number }): void; (e:'canvas-context', payload:{ x:number; y:number }): void; (e:'add-subnet-request', payload:{ worldX:number; worldY:number; screenX:number; screenY:number }): void }>();
 import { onMounted, onUnmounted, reactive, watch, computed } from 'vue';
 import { useCanvas } from '@/composables/canvas/useCanvas';
 import { createRenderer } from '@/composables/canvas/useRenderer';
@@ -111,6 +111,7 @@ function syncSelection(sel: null | { type:'peer'|'subnet'|'link'; id:string }) {
 }
 
 function onMouseDown(e:MouseEvent){
+  ;(window as any).__lastMouseButton = e.button;
   const rect = canvasRef.value!.getBoundingClientRect();
   const sx = e.clientX - rect.left; const sy = e.clientY - rect.top; const pt = screenToWorld(sx, sy);
   // Pan with middle or shift+left
@@ -164,7 +165,7 @@ function onMouseDown(e:MouseEvent){
     }
     syncSelection({ type:'peer', id: peer.id });
     interactions.drag.active=true; interactions.drag.type='peer'; interactions.drag.id=peer.id; interactions.drag.offsetX = pt.x - peer.x; interactions.drag.offsetY = pt.y - peer.y;
-    click.down=true; click.worldX=pt.x; click.worldY=pt.y; click.target=peer.id; click.type='peer'; click.moved=false;
+  click.down=true; click.worldX=pt.x; click.worldY=pt.y; click.target=peer.id; click.type='peer'; click.moved=false; (click as any).sx = sx; (click as any).sy = sy;
   } else if (subnet){
       // Resize test first (edges) before move
       const edge = interactions.edgeAtPoint(subnet, pt);
@@ -304,8 +305,8 @@ function onMouseUp(){
   if (interactions.resizeDrag.active){ interactions.resizeDrag.active=false; invalidate(); }
   // Open peer details only when in select tool mode (avoid in cut/connect/add-subnet modes)
   if (click.down && !click.moved && click.type==='peer' && click.target && store.tool==='select'){
-    /* open peer dialog through store */
-    store.openPeerDetails(click.target);
+    // Only emit for context menu; do NOT open peer details automatically anymore.
+    emit('peer-click', { id: click.target, x: (click as any).sx, y: (click as any).sy });
   }
   if (click.down && !click.moved && ((click.type==='' && ui.hoverLinkId) || (store.tool==='cut' && ui.hoverLinkId))){
     if (store.tool==='cut') {
@@ -333,6 +334,10 @@ function onMouseUp(){
     // Freeze current ghost position and emit request so parent can open creation dialog.
     ui.ghostSubnet.frozen = true; ui.ghostSubnet.active = true; // keep visible
     emit('add-subnet-request', { worldX: click.worldX, worldY: click.worldY, screenX: (click as any).sx, screenY: (click as any).sy });
+  }
+  // Right-click on empty canvas opens network actions menu
+  if (click.down && !click.moved && click.type==='' && (window as any).__lastMouseButton===2 && store.tool==='select'){
+    emit('canvas-context', { x: (click as any).sx, y: (click as any).sy });
   }
   click.down=false; interactions.enforceSubnetHierarchy(); invalidate();
 }
