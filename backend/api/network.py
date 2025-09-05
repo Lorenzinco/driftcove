@@ -142,15 +142,15 @@ def upload_topology(topology: Topology, _: Annotated[str, Depends(verify_token)]
 
             # Create all subnet links
             for subnet in topology.subnets.values():
-                if subnet.name in topology.subnet_links:
-                    for linked_peer in topology.subnet_links[subnet.address]:
+                if subnet.subnet in topology.subnet_links:
+                    for linked_peer in topology.subnet_links[subnet.subnet]:
                         peer_in_db = db.get_peer_by_address(linked_peer.address)
-                        subnet_in_db = db.get_subnet_by_address(subnet.address)
+                        subnet_in_db = db.get_subnet_by_address(subnet.subnet)
                         if peer_in_db is None:
                             raise HTTPException(status_code=404, detail=f"Peer with address {linked_peer.address} does not exist")
                         if subnet_in_db is None:
-                            raise HTTPException(status_code=404, detail=f"Subnet with name {subnet.name} does not exist")
-                        db.add_peer_subnet_link(peer_in_db, subnet_in_db)
+                            raise HTTPException(status_code=404, detail=f"Subnet with address {subnet.subnet} does not exist")
+                        db.add_link_from_peer_to_subnet(peer_in_db, subnet_in_db)
 
             # Finally, apply the new configuration
             apply_config_from_database()
