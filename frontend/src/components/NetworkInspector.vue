@@ -28,7 +28,7 @@
                 </v-dialog>
 
 
-        <template v-if="store.selectedPeer">
+                <template v-if="store.selectedPeer">
             <v-text-field v-model="store.selectedPeer.name" label="Name" density="comfortable" />
             <v-text-field v-model="store.selectedPeer.ip" label="IP address" density="comfortable" />
             <v-select
@@ -38,6 +38,31 @@
             density="comfortable"
             @update:modelValue="v => store.assignToSubnet(store.selectedPeer!.id, v as string | null)"
             />
+                        <v-expansion-panels multiple v-if="store.selectedPeer.host && store.selectedPeer.services && Object.keys(store.selectedPeer.services).length">
+                            <v-expansion-panel value="services">
+                                <v-expansion-panel-title class="text-subtitle-2">
+                                    <v-icon icon="mdi-server" size="18" class="me-1"/> Services ({{ Object.keys(store.selectedPeer.services).length }})
+                                </v-expansion-panel-title>
+                                <v-expansion-panel-text>
+                                    <v-list density="compact">
+                                        <v-list-item
+                                            v-for="(svc,name) in store.selectedPeer.services"
+                                            :key="name"
+                                            :title="name + (svc.port ? ' :'+svc.port : '')"
+                                            rounded="sm"
+                                        >
+                                            <template #prepend>
+                                                <v-icon icon="mdi-lan" size="16" class="me-1" />
+                                            </template>
+                                            <template #append>
+                                                <span class="text-caption text-medium-emphasis" v-if="svc.description">{{ svc.description }}</span>
+                                            </template>
+                                        </v-list-item>
+                                        <v-list-item v-if="!Object.keys(store.selectedPeer.services).length" title="No services" disabled />
+                                    </v-list>
+                                </v-expansion-panel-text>
+                            </v-expansion-panel>
+                        </v-expansion-panels>
         </template>
 
 
@@ -48,6 +73,17 @@
                 <v-text-field v-model.number="store.selectedSubnet.width" type="number" label="Width" density="comfortable" hide-details="auto" />
                 <v-text-field v-model.number="store.selectedSubnet.height" type="number" label="Height" density="comfortable" hide-details="auto" />
             </div>
+                                    <div class="d-flex ga-2 w-100 mt-2 align-start">
+                                        <v-color-picker
+                                            v-model="pickerRgba"
+                                            mode="rgba"
+                                            show-alpha
+                                            :hide-canvas="false"
+                                            hide-inputs
+                                            elevation="1"
+                                            @update:modelValue="applyPicker"
+                                        />
+                                    </div>
             <div class="text-caption text-medium-emphasis mt-1">Drag edges or edit width/height.</div>
         </template>
 
@@ -133,7 +169,9 @@
             </v-expansion-panel>
         </v-expansion-panels>
             <div class="mt-3">
-                <v-btn block color="primary" :loading="applying" prepend-icon="mdi-cloud-upload" @click="applyToBackend">Apply Topology To Backend</v-btn>
+                <v-btn block color="success" :loading="applying" prepend-icon="mdi-content-save" @click="applyToBackend">
+                    Save Changes
+                </v-btn>
             </div>
             <v-alert v-if="applyMessage" :type="applySuccess ? 'success' : 'error'" density="comfortable" class="mt-3" dismissible @click:close="applyMessage=''">
                 {{ applyMessage }}
@@ -144,7 +182,9 @@
 
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { nextTick } from 'vue'
+import { emitRedraw } from '@/utils/bus'
 import { useNetworkStore } from '@/stores/network'
 import { useBackendInteractionStore } from '@/stores/backendInteraction'
 
@@ -160,6 +200,48 @@ const applySuccess = ref(false)
 // Categorised peer lists
 const hostPeers = computed(() => store.peers.filter(p => p.host))
 const nonHostPeers = computed(() => store.peers.filter(p => !p.host))
+
+// Subnet color handling
+const hexColor = ref('')
+// Vuetify v-color-picker in rgba mode emits object { r,g,b,a } (numbers 0-255 except a 0-1)
+const pickerRgba = ref<{ r:number; g:number; b:number; a:number } | null>(null)
+
+function subnetRgbaToComponents(rgbaNum:number){
+    const r = (rgbaNum >> 24) & 0xFF;
+    const g = (rgbaNum >> 16) & 0xFF;
+    const b = (rgbaNum >> 8) & 0xFF;
+    const a = (rgbaNum & 0xFF) / 255;
+    return { r, g, b, a };
+}
+function componentsToRgbaNumber(r:number,g:number,b:number,a:number){
+    const aByte = Math.round(a*255) & 0xFF;
+    return ((r & 0xFF) << 24) | ((g & 0xFF) << 16) | ((b & 0xFF) << 8) | aByte;
+}
+function updateColorModels(){
+    const s = store.selectedSubnet as any;
+    if (!s || typeof s.rgba !== 'number') { hexColor.value=''; pickerRgba.value=null; return; }
+    const { r,g,b,a } = subnetRgbaToComponents(s.rgba);
+    hexColor.value = `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}${aByteHex(a)}`;
+    pickerRgba.value = { r, g, b, a };
+}
+function aByteHex(a:number){ const v = Math.round(a*255); return v.toString(16).padStart(2,'0'); }
+function applyHexColor(){
+    const s = store.selectedSubnet as any; if (!s) return;
+    const v = hexColor.value.replace('#','').trim();
+    if (![6,8].includes(v.length)) return; // ignore invalid
+    const r = parseInt(v.slice(0,2),16); const g = parseInt(v.slice(2,4),16); const b = parseInt(v.slice(4,6),16); const a = v.length===8 ? parseInt(v.slice(6,8),16)/255 : 0.9;
+    s.rgba = componentsToRgbaNumber(r,g,b,a); pickerRgba.value = { r,g,b,a }; invalidateCanvas();
+}
+function applyPicker(val:any){
+    if (!val) return; const s = store.selectedSubnet as any; if (!s) return;
+    const r = val.r ?? 0, g = val.g ?? 0, b = val.b ?? 0, a = val.a ?? 1;
+    s.rgba = componentsToRgbaNumber(r,g,b,a);
+    hexColor.value = `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}${aByteHex(a)}`;
+    invalidateCanvas();
+}
+function invalidateCanvas(){ emitRedraw(); }
+watch(()=>store.selectedSubnet?.id, ()=> updateColorModels(), { immediate:true });
+watch(()=> (store.selectedSubnet as any)?.rgba, ()=> updateColorModels());
 
 function selectPeer(p:any) { store.openPeerDetails(p.id) }
 function selectSubnet(s:any) {

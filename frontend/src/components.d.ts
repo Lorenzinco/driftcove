@@ -8,11 +8,21 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AddPeerDialog: typeof import('./components/canvas/overlays/AddPeerDialog.vue')['default']
+    AddServiceDialog: typeof import('./components/canvas/overlays/AddServiceDialog.vue')['default']
+    AddSubnetDialog: typeof import('./components/canvas/overlays/AddSubnetDialog.vue')['default']
     AppFooter: typeof import('./components/AppFooter.vue')['default']
+    CanvasStage: typeof import('./components/canvas/CanvasStage.vue')['default']
     HelloWorld: typeof import('./components/HelloWorld.vue')['default']
+    LinkTypeDialog: typeof import('./components/canvas/overlays/LinkTypeDialog.vue')['default']
     NetworkCanvas: typeof import('./components/NetworkCanvas.vue')['default']
     NetworkInspector: typeof import('./components/NetworkInspector.vue')['default']
+    PeerConfigDialog: typeof import('./components/canvas/overlays/PeerConfigDialog.vue')['default']
+    PeerDetailsDialog: typeof import('./components/canvas/overlays/PeerDetailsDialog.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SubnetContext: typeof import('./components/canvas/overlays/SubnetContext.vue')['default']
+    SubnetInfoDialog: typeof import('./components/canvas/overlays/SubnetInfoDialog.vue')['default']
+    SubnetMenu: typeof import('./components/canvas/overlays/SubnetMenu.vue')['default']
   }
 }

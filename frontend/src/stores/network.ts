@@ -1,22 +1,14 @@
 import { defineStore } from 'pinia'
+import type { Peer, Subnet, Link, Tool, ServiceInfo } from '@/types/network'
 
-
-export interface ServiceInfo { port: number; name: string; department?: string; description?: string }
-export interface Peer { id: string; name: string; ip: string; subnetId: string | null; x: number; y: number; allowed: boolean; services?: Record<string, ServiceInfo>; host?: boolean; presharedKey?: string; publicKey?: string }
-export interface Subnet { id: string; name: string; cidr: string; description?: string; x: number; y: number; width: number; height: number }
-export interface Link { id: string; fromId: string; toId: string; kind?: 'p2p' | 'service' | 'membership'; serviceName?: string }
-
+// Local helper type for service info (embedded inside Peer.services)
 
 function uid(prefix = 'id') { return prefix + Math.random().toString(36).slice(2, 9) }
-
-
-export type Tool = 'select' | 'connect' | 'cut' | 'add-subnet'
-
 
 export const useNetworkStore = defineStore('network', {
     state: () => ({
     peers: [ { id: uid('p_'), name: 'Peer 1', ip: '10.0.1.10', subnetId: null, x: 540, y: 300, allowed: true, services: {}, host: false } as Peer ],
-        subnets: [ { id: uid('s_'), name: 'Office LAN', cidr: '10.0.1.0/24', x: 520, y: 300, width: 360, height: 240 } as Subnet ],
+        subnets: [ { id: uid('s_'), name: 'Office LAN', cidr: '10.0.1.0/24', x: 520, y: 300, width: 360, height: 240, rgba: 0x00FF00E5 } as Subnet ],
         links: [] as Link[],
 
 
@@ -24,8 +16,8 @@ export const useNetworkStore = defineStore('network', {
         tool: 'select' as Tool,
 
 
-        pan: { x: 0, y: 0, dragging: false, sx: 0, sy: 0 },
-        zoom: 1,
+    pan: { x: 0, y: 0, dragging: false, sx: 0, sy: 0 },
+    zoom: 1,
 
 
         grid: true,
@@ -58,9 +50,9 @@ export const useNetworkStore = defineStore('network', {
 
     // (Peer add functionality removed per latest requirements)
 
-        addSubnetAt(x: number, y: number) {
+        addSubnetAt(x: number, y: number, rgba:number = 0x00FF00E5) {
             const id = uid('s_')
-            this.subnets.push({ id, name: 'Subnet', cidr: '10.0.0.0/24', x, y, width: 320, height: 200 })
+            this.subnets.push({ id, name: 'Subnet', cidr: '10.0.0.0/24', x, y, width: 320, height: 200, rgba })
             this.selection = { type: 'subnet', id, name: 'Subnet' }
             this.tool = 'select'
         },
@@ -95,7 +87,7 @@ export const useNetworkStore = defineStore('network', {
             }
         },
 
-    applyBackendTopology(payload: { subnets: Array<{ id: string; name: string; cidr: string; description?: string; x?: number; y?: number; width?: number; height?: number }>; peers: Array<{ id: string; name: string; ip: string; subnetId: string | null; x?: number; y?: number; services?: Record<string, ServiceInfo>; host?: boolean; presharedKey?: string; publicKey?: string }>; links: Link[] }) {
+    applyBackendTopology(payload: { subnets: Array<{ id: string; name: string; cidr: string; description?: string; x?: number; y?: number; width?: number; height?: number; rgba?: number }>; peers: Array<{ id: string; name: string; ip: string; subnetId: string | null; x?: number; y?: number; services?: Record<string, ServiceInfo>; host?: boolean; presharedKey?: string; publicKey?: string }>; links: Link[] }) {
             const oldSelection = this.selection
 
             // --- Subnets ---
@@ -107,6 +99,8 @@ export const useNetworkStore = defineStore('network', {
                 if (existing.name !== incoming.name) existing.name = incoming.name
                 if (existing.cidr !== incoming.cidr) existing.cidr = incoming.cidr
                 if (incoming.description !== undefined && existing.description !== incoming.description) existing.description = incoming.description
+                // Intentionally do NOT overwrite existing.rgba so in-progress user color edits aren't reset by polling.
+                // (Treat color like x,y,width,height: only set on initial add below.)
                 return true
             })
             // Add new
@@ -123,17 +117,23 @@ export const useNetworkStore = defineStore('network', {
                         x = rightMost.x + rightMost.width/2 + width/2 + 120
                         y = rightMost.y
                     }
-                    this.subnets.push({ id: inc.id, name: inc.name, cidr: inc.cidr, description: inc.description, x, y, width, height })
+                    let rgba = inc.rgba
+                    if (rgba != null) rgba = (Number(rgba) >>> 0) & 0xFFFFFFFF
+                    this.subnets.push({ id: inc.id, name: inc.name, cidr: inc.cidr, description: inc.description, x, y, width, height, rgba })
                 }
             }
 
             // --- Peers ---
-            // Allowed rule: a peer is allowed if it appears in ANY link (as fromId or toId). If it appears in none, it's considered isolated.
+            // Allowed rule (updated): a peer is allowed ONLY if it has a membership link to its own subnet.
+            // (Previously: any link qualified. Now restrict to membership kind linking peer -> subnetId.)
             const peerAllowed: Record<string, boolean> = {}
             const incomingPeerIds = new Set(payload.peers.map(p => p.id))
+            // Build quick lookup of membership links for efficiency
             for (const l of payload.links) {
-                if (incomingPeerIds.has(l.fromId)) peerAllowed[l.fromId] = true
-                if (incomingPeerIds.has(l.toId)) peerAllowed[l.toId] = true
+                if ((l as any).kind === 'membership') {
+                    // Expect pattern: fromId = peerId, toId = subnetId
+                    peerAllowed[l.fromId] = true
+                }
             }
             // (incomingPeerIds defined above)
             // Update or remove peers
@@ -147,7 +147,8 @@ export const useNetworkStore = defineStore('network', {
                     // DO NOT change x,y per requirement
                 }
                 existing.services = incoming.services || {}
-                existing.host = !!(incoming.host || (incoming.services && Object.keys(incoming.services).length > 0))
+                // Derive host only from services map (at least one service with numeric port)
+                existing.host = Object.values(existing.services||{}).some((s:any)=> s && typeof s.port==='number' && !isNaN(s.port))
                 if (incoming.presharedKey && existing.presharedKey !== incoming.presharedKey) existing.presharedKey = incoming.presharedKey
                 if (incoming.publicKey && existing.publicKey !== incoming.publicKey) existing.publicKey = incoming.publicKey
                 existing.allowed = !!peerAllowed[existing.id]
@@ -170,7 +171,9 @@ export const useNetworkStore = defineStore('network', {
                             y = top + Math.random()*(bottom-top)
                         }
                     }
-                    this.peers.push({ id: inc.id, name: inc.name, ip: inc.ip, subnetId: inc.subnetId, x, y, allowed: !!peerAllowed[inc.id], services: inc.services || {}, host: !!(inc.host || (inc.services && Object.keys(inc.services).length > 0)), presharedKey: inc.presharedKey, publicKey: inc.publicKey })
+                    const services = inc.services || {}
+                    const host = Object.values(services).some((s:any)=> s && typeof s.port==='number' && !isNaN(s.port))
+                    this.peers.push({ id: inc.id, name: inc.name, ip: inc.ip, subnetId: inc.subnetId, x, y, allowed: !!peerAllowed[inc.id], services, host, presharedKey: inc.presharedKey, publicKey: inc.publicKey })
                 }
             }
 
@@ -186,5 +189,10 @@ export const useNetworkStore = defineStore('network', {
                 this.selection = stillExists ? oldSelection : null
             }
         },
+        sanitizeColors(){
+            for (const s of this.subnets){
+                if ((s as any).rgba != null){ (s as any).rgba = (Number((s as any).rgba) >>> 0) & 0xFFFFFFFF }
+            }
+        }
     },
 })

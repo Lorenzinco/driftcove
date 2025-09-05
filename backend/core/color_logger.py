@@ -1,7 +1,6 @@
 # color_logger.py
 import logging
 import sys
-import os
 
 RESET = "\033[0m"
 LEVEL_COLORS = {
@@ -24,6 +23,8 @@ DEFAULT_FORMAT = "%(levelprefix)s %(modpath)s: %(message)s"
 
 def get_logger(name: str = "driftcove", level: int = logging.INFO) -> logging.Logger:
     logger = logging.getLogger(name)
+    logger.handlers.clear()
+    logger.propagate = False
     if logger.handlers:
         # Already configured
         return logger

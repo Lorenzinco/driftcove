@@ -91,7 +91,7 @@ class Database:
             for row in peers_rows:
                 peers.append(Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5]))
             for peer in peers:
-                hosted_services = self.get_hosted_services(peer)
+                hosted_services = self.get_services_by_host(peer)
                 peer.services.update({service.name: service for service in hosted_services})
 
         except sqlite3.Error as e:
@@ -168,9 +168,10 @@ class Database:
         """
         try:
             self.cursor.execute("""
-                INSERT INTO subnets (name, subnet, description, x, y, width, height)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (subnet.name,subnet.subnet,subnet.description,subnet.x,subnet.y,subnet.width,subnet.height))
+                INSERT INTO subnets (name, subnet, description, x, y, width, height, rgba)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (subnet.name,subnet.subnet,subnet.description,subnet.x,subnet.y,subnet.width,subnet.height,subnet.rgba))
+            logging.error(f"Created subnet {subnet} in database.")
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while creating subnet: {e}")
         return
@@ -208,6 +209,27 @@ class Database:
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting peer by username: {e}")
         return None
+    
+    def get_peer_by_address(self, address: str) -> Peer|None:
+        """
+        This function returns a Peer object by its address.
+        If the peer does not exist, it will return None.
+        """
+        try:
+            self.cursor.execute("""
+                SELECT username, public_key, preshared_key, address, x, y
+                FROM peers WHERE address = ?
+            """, (address,))
+            row = self.cursor.fetchone()
+            if row:
+                peer = Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5])
+                hosted_services = self.get_services_by_host(peer)
+                peer.services.update({service.name: service for service in hosted_services})
+                return peer
+
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while getting peer by address: {e}")
+        return None
 
     def get_subnets(self)->list[Subnet]:
         """
@@ -216,15 +238,12 @@ class Database:
         subnets = []
         try:
             self.cursor.execute("""
-                SELECT subnet, name, description, x, y, width, height
+                SELECT subnet, name, description, x, y, width, height, rgba
                 FROM subnets
             """)
             subnets_rows = self.cursor.fetchall()
-            # Use logging instead of print for Docker/container environments
-            logging.info(f"Found {len(subnets_rows)} subnets in the database.")
-            logging.info(f"Subnets rows: {subnets_rows}")
             for row in subnets_rows:
-                subnets.append(Subnet(subnet=row[0],name=row[1],description=row[2],x=row[3],y=row[4],width=row[5],height=row[6]))
+                subnets.append(Subnet(subnet=row[0],name=row[1],description=row[2],x=row[3],y=row[4],width=row[5],height=row[6],rgba=row[7]))
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting all subnets: {e}")
         return subnets
@@ -236,12 +255,12 @@ class Database:
         """
         try:
             self.cursor.execute("""
-                SELECT subnet, name, description, x, y, width, height
+                SELECT subnet, name, description, x, y, width, height, rgba
                 FROM subnets WHERE subnet = ?
             """, (address,))
             row = self.cursor.fetchone()
             if row:
-                return Subnet(subnet=row[0], name=row[1], description=row[2], x=row[3], y=row[4], width=row[5], height=row[6])
+                return Subnet(subnet=row[0], name=row[1], description=row[2], x=row[3], y=row[4], width=row[5], height=row[6], rgba=row[7])
 
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting subnet by address: {e}")
@@ -299,7 +318,7 @@ class Database:
         subnets = []
         try:
             self.cursor.execute("""
-                SELECT s.subnet, s.name, s.description
+                SELECT s.subnet, s.name, s.description, s.x, s.y, s.width, s.height, s.rgba
                 FROM subnets s
                 JOIN peers_subnets ps ON s.subnet = ps.subnet
                 JOIN peers p ON ps.peer_id = p.id
@@ -307,7 +326,7 @@ class Database:
             """, (peer.public_key,))
             subnets_rows = self.cursor.fetchall()
             for row in subnets_rows:
-                subnets.append(Subnet(subnet=row[0], name=row[1], description=row[2]))
+                subnets.append(Subnet(subnet=row[0], name=row[1], description=row[2], x=row[3], y=row[4], width=row[5], height=row[6], rgba=row[7]))
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting peers subnets: {e}")
         return subnets
@@ -417,7 +436,7 @@ class Database:
                 ON CONFLICT(peer_id, service_id, service_port) DO NOTHING
             """, (peer.public_key, service.name, service.port))
         except sqlite3.Error as e:
-            raise Exception(f"An error occurred while adding link from peer to service: {e}")
+            raise Exception(f"An error occurred while adding link from peer {peer} to service {service}: {e}")
 
     def remove_peer_service_link(self, peer: Peer, service: Service):
         """
@@ -499,6 +518,25 @@ class Database:
 
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting service by name: {e}")
+        return None
+    
+    def get_service_host(self, service: Service) -> Peer:
+        """
+        This function returns the peer that is hosting the service.
+        It will return a Peer object.
+        """
+        try:
+            self.cursor.execute("""
+                SELECT p.username, p.public_key, p.preshared_key, p.address, p.x, p.y
+                FROM peers p
+                JOIN services s ON p.id = s.id
+                WHERE s.name = ?
+            """, (service.name,))
+            row = self.cursor.fetchone()
+            if row:
+                return Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5])
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while getting service host: {e}")
         return None
     
     def get_services_by_host(self, peer:Peer) -> list[Service]:
@@ -587,12 +625,12 @@ class Database:
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while removing link between peers: {e}")
 
-    def get_links_between_peers(self)->list[tuple[Peer, Peer]]:
+    def get_links_between_peers(self)->dict[str, list[Peer]]:
         """
         This function returns a list of links between peers.
-        It will return a list of tuples, each containing two Peer objects.
+        It will return a dictionary with the peer's address as key and all the connected Peers inside a list as value.
         """
-        links = []
+        links = {}
         try:
             self.cursor.execute("""
                 SELECT p1.username, p1.public_key, p1.preshared_key, p1.address, p1.x, p1.y, p2.username, p2.public_key, p2.preshared_key, p2.address, p2.x, p2.y
@@ -602,18 +640,21 @@ class Database:
             """)
             links_rows = self.cursor.fetchall()
             for row in links_rows:
+                logging.info(f"Link row: {row}")
                 peer1 = Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5])
                 peer2 = Peer(username=row[6], public_key=row[7], preshared_key=row[8], address=row[9], x=row[10], y=row[11])
-                links.append((peer1, peer2))
+                if peer1.address not in links:
+                    links[peer1.address] = []
+                links[peer1.address].append(peer2)
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting links between peers: {e}")
         return links
     
-    def get_links_between_peers_and_services(self)->list[tuple[Peer, Service]]:
+    def get_links_between_peers_and_services(self)->dict[str,list[Peer]]:
         """
-        This function returns a list of tuples containing a Peer and a Service.
+        This function returns dictionary with the service name as key and all the connected Peers inside a list as value.
         """
-        links = []
+        links = {}
         try:
             self.cursor.execute("""
                 SELECT p.username, p.public_key, p.preshared_key, p.address, p.x, p.y, s.name, s.department, s.port, s.description
@@ -625,9 +666,34 @@ class Database:
             for row in links_rows:
                 peer = Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5])
                 service = Service(name=row[6], department=row[7], port=row[8], description=row[9])
-                links.append((peer, service))
+                if service.name not in links:
+                    links[service.name] = []
+                links[service.name].append(peer)
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting links between peers and services: {e}")
+        return links
+
+    def get_links_between_subnets_and_peers(self)->dict[str,list[Peer]]:
+        """
+        This function returns dictionary with the subnet address as key and all the connected Peers inside a list as value.
+        """
+        links = {}
+        try:
+            self.cursor.execute("""
+                SELECT p.username, p.public_key, p.preshared_key, p.address, p.x, p.y, s.subnet, s.name, s.description, s.x, s.y, s.width, s.height, s.rgba
+                FROM peers_subnets ps
+                JOIN peers p ON ps.peer_id = p.id
+                JOIN subnets s ON ps.subnet = s.subnet
+            """)
+            links_rows = self.cursor.fetchall()
+            for row in links_rows:
+                peer = Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5])
+                subnet = Subnet(subnet=row[6], name=row[7], description=row[8], x=row[9], y=row[10], width=row[11], height=row[12], rgba=row[13])
+                if subnet.subnet not in links:
+                    links[subnet.subnet] = []
+                links[subnet.subnet].append(peer)
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while getting links between subnets and peers: {e}")
         return links
 
     def close(self):

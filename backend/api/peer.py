@@ -56,6 +56,22 @@ def create_peer(username:str , subnet:str, _: Annotated[str, Depends(verify_toke
     # close the transaction 
     return {"configuration": configuration}
 
+@router.get("/config",tags=["peer"])
+def get_peer_config(username: str, _: Annotated[str, Depends(verify_token)]):
+    """
+    Get the WireGuard configuration for a specific peer.
+    This endpoint will return the WireGuard configuration file for the peer identified by the provided username.
+    """
+    try:
+        with lock.read_lock():
+            peer = db.get_peer_by_username(username)
+            if peer is None:
+                raise HTTPException(status_code=404, detail="Peer not found")
+            configuration = generate_wg_config(peer)
+        return {"configuration": configuration}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Config generation failed: {e}")
+
 @router.get("/info",tags=["peer"])
 def get_peer_info(username: str, _: Annotated[str, Depends(verify_token)]):
     """

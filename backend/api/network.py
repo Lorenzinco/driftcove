@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from backend.core.state_manager import state_manager
+from backend.core.models import Peer, Subnet, Service, Topology
 from backend.core.config import verify_token
 from backend.core.lock import lock
 from backend.core.database import db
@@ -31,122 +32,115 @@ def get_topology(_: Annotated[str, Depends(verify_token)])->dict:
     """
     Get the current network topology
     """
-    subnets: list = []
-    topology:list[dict] = []
-    links: list[dict] = []
+    subnets: dict[str, Subnet] = {}
+    peers: dict[str, Peer] = {}
+    services: dict[str, Service] = {}
+
+    p2p_links : dict[str, list[Peer]] = {}
+    service_links : dict[str, list[Peer]] = {}
+    subnet_links : dict[str, list[Peer]] = {}
+
+
     try:
         with lock.read_lock():
-            subnets = db.get_subnets()
-            for subnet in subnets:
-                peers = db.get_peers_in_subnet(subnet)
-                logging.info(peers)
-                topology.append({subnet.subnet:peers})
-                peers_linked = db.get_peers_linked_to_subnet(subnet)
-                for peer in peers_linked:
-                    links.append({f"{subnet.subnet} <-subnet-> {peer.username}": [subnet, peer]})
-            services = db.get_all_services()
-            for service in services:
-                peers = db.get_service_peers(service)
-                links.append({f"{service.name} <-service->": peers})
-            logging.info(f"Retrieved {len(topology)} subnets and {len(links)} service links from the database.")
-            logging.info("Retrieving peer to peer links...")
+            subnets_fetched = db.get_subnets()
+            for subnet in subnets_fetched:
+                subnets[subnet.subnet] = subnet
+            peers_fetched = db.get_all_peers()
+            for peer in peers_fetched:
+                peers[peer.address] = peer
+            services_fetched = db.get_all_services()
+            for service in services_fetched:
+                services[service.name] = service
+
             p2p_links = db.get_links_between_peers()
-            for link in p2p_links:
-                links.append({f"{link[0].username} <-p2p-> {link[1].username}": [link[0], link[1]]})
-        logging.info(f"Retrieved {len(p2p_links)} peer to peer links from the database.")
+
+            service_links = db.get_links_between_peers_and_services()
+            for subnet in subnets_fetched:
+                peers_in_subnet = db.get_peers_in_subnet(subnet)
+                if len(peers_in_subnet) > 0:
+                    subnet_links[subnet.subnet] = peers_in_subnet
+
+            topology = Topology(subnets=subnets, peers=peers, services=services, service_links=service_links, p2p_links=p2p_links, subnet_links=subnet_links)
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
-    return {"subnets":subnets,"networks":topology, "links": links}
+        raise HTTPException(status_code=500, detail=f"Topology get failed: {e}")
+    return {"topology": topology}
 
 @router.post("/topology",tags=["network"])
-def upload_topology(topology: dict, _: Annotated[str, Depends(verify_token)]):
+def upload_topology(topology: Topology, _: Annotated[str, Depends(verify_token)]):
     """
     Upload a new network topology. If any of the peers inside the topology do not exist, an error will be returned, if any of the peer inside the topology have invalid addresses an error will be returned.
     """
-    # Expected input structure (flexible):
-    # {
-    #   "subnets": [ { subnet, name, ... }, ...],
-    #   "networks": [ { subnetCidr: [ peerObjOrDict, ... ] }, ...] OR { subnetCidr: [...] },
-    #   "links": [ { "A <-p2p-> B": [peerA, peerB]}, { "subnetCidr <-subnet-> username": [subnetObj, peerObj]}, { "serviceName <-service->": [peerObj,...]} ]
-    # }
     try:
         with lock.write_lock(), state_manager.saved_state():
+            # Clear existing topology
             db.clear_database()
 
-            subnets = topology.get("subnets", [])
-            networks_raw = topology.get("networks", [])
-            links = topology.get("links", [])
+            # Create all subnets
+            for subnet in topology.subnets.values():
+                db.create_subnet(subnet)
 
-            # helper to convert dicts to simple objects with attribute access
-            def ensure_obj(x):
-                if isinstance(x, dict):
-                    return type("Tmp", (), x)
-                return x
+            # Create all peers
+            for peer in topology.peers.values():
+                subnet = db.get_peers_subnet(peer)
+                if subnet is None:
+                    raise HTTPException(status_code=404, detail=f"Peer {peer.username} is in a subnet that does not exist")
+                db.create_peer(peer)
+                for service in peer.services.values():
+                    db.create_service(peer, service)
 
-            # Normalize networks into a mapping subnet_cidr -> list(peers)
-            network_map = {}
-            if isinstance(networks_raw, dict):
-                network_map = networks_raw
-            else:
-                for entry in networks_raw:
-                    if isinstance(entry, dict):
-                        for k, v in entry.items():
-                            network_map[k] = v
+            # Check that all services listed have a host
+            for service in topology.services.values():
+                host = db.get_service_host(service)
+                if host is None:
+                    raise HTTPException(status_code=404, detail=f"Service host for service {service.name} does not exist")
 
-            # Create subnets and peers
-            for subnet_entry in subnets:
-                subnet_obj = ensure_obj(subnet_entry)
-                # db.create_subnet expects an object with attributes (avoid attribute error when dict provided)
-                db.create_subnet(subnet_obj)
-                subnet_key = getattr(subnet_obj, "subnet", None) or getattr(subnet_obj, "cidr", None)
-                peers_list = network_map.get(subnet_key, [])
-                for peer_entry in peers_list:
-                    peer_obj = ensure_obj(peer_entry)
-                    db.create_peer(peer_obj)
+            # Create all p2p links
+            for peer in topology.peers.values():
+                if peer.address in topology.p2p_links:
+                    logging.info(f"Peer {peer.username} has {len(topology.p2p_links[peer.address])} links")
+                    for linked_peer in topology.p2p_links[peer.address]:
+                        peer_in_db = db.get_peer_by_address(peer.address)
+                        linked_peer_in_db = db.get_peer_by_address(linked_peer.address)
+                        if peer_in_db is None:
+                            raise HTTPException(status_code=404, detail=f"Peer with address {peer.address} does not exist")
+                        if linked_peer_in_db is None:
+                            raise HTTPException(status_code=404, detail=f"Linked peer with address {linked_peer.address} does not exist")
+                        db.add_link_between_two_peers(peer_in_db, linked_peer_in_db)
+                
 
-            # Process links (list of single-key dicts)
-            for link_entry in links:
-                if not isinstance(link_entry, dict):
-                    continue
-                for key, value in link_entry.items():
-                    if "<-p2p->" in key:
-                        # value expected [peerA, peerB]
-                        if isinstance(value, (list, tuple)) and len(value) == 2:
-                            peerA = ensure_obj(value[0])
-                            peerB = ensure_obj(value[1])
-                            db.add_link_between_two_peers(peerA, peerB)
-                        else:
-                            raise HTTPException(status_code=400, detail=f"Invalid p2p link format for {key}")
-                    elif "<-service->" in key:
-                        service_name = key.split(" <-service->")[0]
-                        service = db.get_service_by_name(service_name)
-                        if not service:
-                            raise HTTPException(status_code=400, detail=f"Service {service_name} not found")
-                        for peer_entry in value:
-                            peer_obj = ensure_obj(peer_entry)
-                            db.add_peer_service_link(peer_obj, service)
-                    elif "<-subnet->" in key:
-                        subnet_address = key.split(" <-subnet->")[0]
-                        for item in value:
-                            obj = ensure_obj(item)
-                            # Determine if obj is a peer or subnet based on available attributes
-                            if hasattr(obj, "username"):
-                                db.add_link_from_peer_to_subnet(obj, subnet_address)
-                            elif hasattr(obj, "subnet"):
-                                # If a subnet object appears, skip (already represented)
-                                continue
-                    else:
-                        logging.error(f"Unknown link type in key: {key}, {value}")
-                        raise HTTPException(status_code=501, detail=f"Topology upload failed: Unknown link type in key: {key}")
+            # Create all service links
+            for service in topology.services.values():
+                if service.name in topology.service_links:
+                    for linked_peer in topology.service_links[service.name]:
+                        peer_in_db = db.get_peer_by_address(linked_peer.address)
+                        service_in_db = db.get_service_by_name(service.name)
+                        if peer_in_db is None:
+                            raise HTTPException(status_code=404, detail=f"Peer with address {linked_peer.address} does not exist")
+                        if service_in_db is None:
+                            raise HTTPException(status_code=404, detail=f"Service with name {service.name} does not exist")
+                        db.add_peer_service_link(peer_in_db, service_in_db)
 
-            # Apply WireGuard configuration once after all changes
+            # Create all subnet links
+            for subnet in topology.subnets.values():
+                if subnet.name in topology.subnet_links:
+                    for linked_peer in topology.subnet_links[subnet.name]:
+                        peer_in_db = db.get_peer_by_address(linked_peer.address)
+                        subnet_in_db = db.get_subnet_by_name(subnet.name)
+                        if peer_in_db is None:
+                            raise HTTPException(status_code=404, detail=f"Peer with address {linked_peer.address} does not exist")
+                        if subnet_in_db is None:
+                            raise HTTPException(status_code=404, detail=f"Subnet with name {subnet.name} does not exist")
+                        db.add_peer_subnet_link(peer_in_db, subnet_in_db)
+
+            # Finally, apply the new configuration
             apply_config_from_database()
 
-    except HTTPException:
-        raise
+    except HTTPException as e:
+        raise HTTPException(status_code=400, detail=f"Invalid topology data: {e}")
     except Exception as e:
         raise HTTPException(status_code=501, detail=f"Topology update failed: {e}")
-            
     return {"message": "Topology uploaded successfully"}
 
 @router.get("/status",tags=["network"])

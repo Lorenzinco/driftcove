@@ -22,7 +22,12 @@
 
 
     <div style="height: 77vh;" class="px-3 pb-3 w-100">
-        <NetworkCanvas />
+                <CanvasStage ref="canvasStage" @subnet-click="onSubnetClick" @add-subnet-request="onAddSubnetRequest">
+                    <SubnetContext ref="subnetContext" />
+                    <PeerDetailsDialog />
+                    <AddSubnetDialog ref="addSubnetDialog" />
+                    <LinkTypeDialog ref="linkTypeDialog" />
+                </CanvasStage>
     </div>
     </v-sheet>
 
@@ -43,16 +48,34 @@
 
 
 <script setup lang="ts">
-    import NetworkCanvas from '@/components/NetworkCanvas.vue'
+    import CanvasStage from '@/components/canvas/CanvasStage.vue'
+    import SubnetContext from '@/components/canvas/overlays/SubnetContext.vue'
+    import PeerDetailsDialog from '@/components/canvas/overlays/PeerDetailsDialog.vue'
     import { useNetworkStore } from '@/stores/network'
+    import AddSubnetDialog from '@/components/canvas/overlays/AddSubnetDialog.vue'
+    import LinkTypeDialog from '@/components/canvas/overlays/LinkTypeDialog.vue'
     import { onMounted, onBeforeUnmount } from 'vue'
     import { useBackendInteractionStore } from '@/stores/backendInteraction'
 
     const store = useNetworkStore()
+    const subnetContext = ref<InstanceType<typeof SubnetContext> | null>(null)
+    const addSubnetDialog = ref<InstanceType<typeof AddSubnetDialog> | null>(null)
+    const canvasStage = ref<any>(null)
+    const linkTypeDialog = ref<InstanceType<typeof LinkTypeDialog> | null>(null)
     const backend = useBackendInteractionStore()
 
-    onMounted(()=> backend.startTopologyPolling(1000))
-    onBeforeUnmount(()=> backend.stopTopologyPolling())
+    function onSubnetClick(e:{ id:string; x:number; y:number }) {
+        // Only open the subnet context menu while in select tool
+        if (store.tool !== 'select') return;
+        if (!e.id) { subnetContext.value?.hideMenu?.(); return; }
+        subnetContext.value?.showMenu(e);
+    }
+    function onAddSubnetRequest(pos:{ worldX:number; worldY:number }) { addSubnetDialog.value?.showAt(pos.worldX, pos.worldY) }
+
+    function handleSubnetDialogClosed(){ canvasStage.value?.clearGhostSubnet?.(); }
+    function handleRequestLinkType(e: any){ const { from, to } = e.detail||{}; if (from && to) linkTypeDialog.value?.show(from, to); }
+    onMounted(()=> { backend.startTopologyPolling(1000); window.addEventListener('add-subnet-dialog-closed', handleSubnetDialogClosed); window.addEventListener('request-link-type', handleRequestLinkType) })
+    onBeforeUnmount(()=> { backend.stopTopologyPolling(); window.removeEventListener('add-subnet-dialog-closed', handleSubnetDialogClosed); window.removeEventListener('request-link-type', handleRequestLinkType) })
 </script>
 
 

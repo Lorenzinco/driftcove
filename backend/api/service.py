@@ -86,9 +86,14 @@ def service_connect(username: str, service_name: str, _: Annotated[str, Depends(
             if service is None:
                 raise HTTPException(status_code=404, detail="Service not found")
             
+            host = db.get_service_host(service)
+            if host is None:
+                raise HTTPException(status_code=404, detail="Service host not found")
+            
+            
             db.add_peer_service_link(peer, service)
             logging.info(f"Connecting peer {peer.username} to service {service.name}")
-            allow_link_with_port(peer.address, service.address, service.port)
+            allow_link_with_port(peer.address, host.address, service.port)
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Connecting peer {username} to {service_name} failed: {e}")

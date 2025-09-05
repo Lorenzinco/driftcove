@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS subnets(
     x FLOAT,
     y FLOAT,
     width FLOAT,
-    height FLOAT
+    height FLOAT,
+    rgba INTEGER DEFAULT 0x00FF00E5
 );
 
     

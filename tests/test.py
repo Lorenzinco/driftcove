@@ -202,12 +202,12 @@ def test_get_all_peers():
 if __name__ == "__main__":
     # test_create_peer("peer1")
     # test_create_peer("peer2")
-    # test_add_link_between_peers("peer1", "peer2")
+    test_add_link_between_peers("Test", "master")
     # exit(0)
 
     # test_get_subnets()
     #test_get_topology()
-    test_create_service()
+    #test_create_service()
     exit(0)
 
     assert(test_create_peer() is True)

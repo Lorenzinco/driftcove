@@ -30,31 +30,48 @@ def apply_config_from_database():
         logging.info("Resetting iptables rules for WireGuard and WireGuard config...")
         flush_iptables()
         flush_wireguard()
-        subnets = db.get_subnets()
-        for subnet in subnets:
-            peers = db.get_peers_in_subnet(subnet)
-            for peer in peers:
-                apply_to_wg_config(peer)
-                logging.info(f"Adding route for peer {peer.username} in subnet {subnet.subnet}")
-                allow_link(peer.address, subnet.subnet)
+
+        peers = db.get_all_peers()
+        for peer in peers:
+            apply_to_wg_config(peer)
 
         logging.info("Loading from db peer to peer links")
         links = db.get_links_between_peers()
-        for link in links:
-            allow_link(link[0],link[1])
-            allow_link(link[1],link[0])
 
-        logging.info("Loading from db service to peer links")
+        for peer in peers:
+            peers_linked_to_peer = links[peer.address] if peer.address in links else []
+            if len(peers_linked_to_peer) > 0:
+                logging.info(f"Peer {peer.username} ({peer.address}) is linked to {[p.username for p in peers_linked_to_peer]}")
+                for linked_peer in peers_linked_to_peer:
+                    allow_link(peer.address, linked_peer.address)
+                    allow_link(linked_peer.address, peer.address)
+
+        logging.info("Loading from db peer to service links")
+        services = db.get_all_services()
         service_links = db.get_links_between_peers_and_services()
-        for link in service_links:
-            allow_link_with_port(link[0],link[1],link[1].port)
-            allow_link(link[1],link[0])
+        for service in services:
+            peers_linked_to_service = service_links[service.name] if service.name in service_links else []
+            if len(peers_linked_to_service) > 0:
+                logging.info(f"Service {service.name} is linked to {[p.username for p in peers_linked_to_service]}")
+                for peer in peers_linked_to_service:
+                    host = db.get_service_host(service)
+                    if host is None:
+                        raise Exception(f"Service host for service {service.name} not found")
+                    allow_link_with_port(peer.address, host.address, service.port)
+                    allow_link(host.address, peer.address)
 
-        logging.info("Every non-allowed traffic will be dropped")
+        logging.info("Loading from db subnet to peer links")
+        subnets = db.get_subnets()
+        subnet_links = db.get_links_between_subnets_and_peers()
+        for subnet in subnets:
+            peers_linked = subnet_links[subnet.name] if subnet.name in subnet_links else []
+            if len(peers_linked) > 0:
+                logging.info(f"Subnet {subnet.name} ({subnet.subnet}) has peers {[p.username for p in peers_linked]}")
+            for peer in peers_linked:
+                allow_link(subnet.subnet, peer.address)
+                allow_link(peer.address, subnet.subnet)
+
         default_policy_drop()
-
-        logging.info(f"Loaded {len(subnets)} subnets and {sum(len(db.get_peers_in_subnet(subnet)) for subnet in subnets)} peers from the database.")
-
         logging.info("Loaded and applied WireGuard configuration from database")
     except Exception as e:
         logging.error(f"Failed to apply WireGuard configuration: {e}")
