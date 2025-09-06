@@ -92,13 +92,13 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   }
 
   function drawLinks(ctx:CanvasRenderingContext2D, ts:number){
-  const { links, peers, ui } = deps();
+  const { links, peers, subnets, ui } = deps();
   // frame increment moved to draw() so all passes share same timing
     interface Agg { a: Peer; b: Peer; p2p: boolean; services: Set<string>; serviceHostId?: string; linkIds: string[]; repId: string }
     const byPair: Record<string, Agg> = {};
     function pairKey(aId:string,bId:string){ return aId < bId ? `${aId}::${bId}` : `${bId}::${aId}`; }
     for (const l of links){
-      if (l.kind==='membership') continue;
+      if (l.kind==='membership' || l.kind==='subnet-subnet' || l.kind==='subnet-service') continue;
       const a = peers.find(p=>p.id===l.fromId); const b = peers.find(p=>p.id===l.toId); if (!a||!b) continue;
       const key = pairKey(a.id,b.id);
       let agg = byPair[key]; if (!agg) agg = byPair[key] = { a, b, p2p:false, services:new Set(), linkIds:[], repId:l.id };
@@ -161,10 +161,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       // Expect l.fromId = peerId, l.toId = subnetId; tolerate reversed
       let peer = peers.find(p=> p.id===l.fromId);
       let subnet = subnets.find(s=> s.id===l.toId);
-      if (!peer || !subnet){
-        peer = peers.find(p=> p.id===l.toId) || peer;
-        subnet = subnets.find(s=> s.id===l.fromId) || subnet;
-      }
+      if (!peer || !subnet){ peer = peers.find(p=> p.id===l.toId) || peer; subnet = subnets.find(s=> s.id===l.fromId) || subnet; }
       if (!peer || !subnet) continue;
       // Do not draw membership links to the peer's own containing subnet
       if ((peer as any).subnetId && (peer as any).subnetId === subnet.id) continue;
@@ -174,45 +171,115 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       const vx = peer.x - cx, vy = peer.y - cy;
       let Bx = cx, By = cy;
       if (vx === 0 && vy === 0){ Bx = cx + hw; By = cy; }
-      else {
-        const sx = Math.abs(vx) / (hw || 1e-6);
-        const sy = Math.abs(vy) / (hh || 1e-6);
-        const t = Math.max(sx, sy) || 1; // scale to border
-        Bx = cx + vx / t; By = cy + vy / t;
-      }
+      else { const sx = Math.abs(vx)/(hw||1e-6), sy = Math.abs(vy)/(hh||1e-6); const t=Math.max(sx,sy)||1; Bx = cx + vx/t; By = cy + vy/t; }
       const B = toScreen(Bx, By);
+      const Mx = (A.x + B.x) / 2, My = (A.y + B.y) / 2;
       // Color from subnet rgba
       let strokeStyle = '#7CF29A';
       const raw = (subnet as any).rgba;
-      if (typeof raw === 'number'){
-        const r = (raw >> 24) & 0xFF; const g = (raw >> 16) & 0xFF; const b = (raw >> 8) & 0xFF;
-        strokeStyle = `rgba(${r},${g},${b},1)`;
-      }
+      if (typeof raw === 'number'){ const r=(raw>>24)&0xFF, g=(raw>>16)&0xFF, b=(raw>>8)&0xFF; strokeStyle = `rgba(${r},${g},${b},1)`; }
       const active = (ui?.hoverPeerId === peer.id) || (ui?.hoverSubnetId === subnet.id) || (ui?.hoverLinkId === (l as any).id);
-      ctx.save();
-      ctx.strokeStyle = strokeStyle;
-      ctx.lineWidth = 2;
-      // Match subnet dash pattern
-      ctx.setLineDash([8, 6]);
-      // Much slower sliding animation
-      ctx.lineDashOffset = active ? -(frame * 0.50) : 0;
-      ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
-      ctx.restore();
+      // Two dashed halves moving toward center when active
+      ctx.save(); ctx.lineWidth=2; ctx.setLineDash([10,6]);
+      const speed = (frame * 0.8);
+      ctx.strokeStyle = strokeStyle; ctx.lineDashOffset = active ? -speed : 0; ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(Mx, My); ctx.stroke();
+      ctx.strokeStyle = strokeStyle; ctx.lineDashOffset = active ? -speed : 0; ctx.beginPath(); ctx.moveTo(B.x, B.y); ctx.lineTo(Mx, My); ctx.stroke();
+      ctx.setLineDash([]); ctx.restore();
       if (active) anyAnim = true;
-
-  // Hover overlay: show when hovering the link or either endpoint (peer/subnet)
-  if (active) {
-        const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
-        const label = 'subnet guest';
-        ctx.save();
-        ctx.font = '600 12px Roboto, sans-serif';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        const padX=8, padY=6; const textW = ctx.measureText(label).width; const boxW = textW + padX*2; const boxH = 14 + padY*2;
+      // Hover overlay label
+      if (active) {
+        const mx = Mx, my = My; const label = 'subnet guest';
+        ctx.save(); ctx.font='600 12px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        const padX=8, padY=6; const textW=ctx.measureText(label).width; const boxW=textW+padX*2; const boxH=14+padY*2;
         ctx.beginPath(); (ctx as any).roundRect?.(mx - boxW/2, my - boxH/2, boxW, boxH, 5);
-        ctx.fillStyle = 'rgba(0,0,0,0.65)'; ctx.fill();
-        ctx.strokeStyle = strokeStyle; ctx.lineWidth = 1; ctx.stroke();
-        ctx.fillStyle = '#fff'; ctx.fillText(label, mx, my);
+        ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fill(); ctx.strokeStyle=strokeStyle; ctx.lineWidth=1; ctx.stroke(); ctx.fillStyle='#fff'; ctx.fillText(label, mx, my);
         ctx.restore();
+      }
+    }
+    if (anyAnim && invalidateFn) requestAnimationFrame(()=> invalidateFn && invalidateFn());
+  }
+
+  function drawSubnetServiceLinks(ctx:CanvasRenderingContext2D){
+    const { links, peers, subnets, ui } = deps();
+    let anyAnim=false;
+    for (const l of links){
+      if (l.kind !== 'subnet-service') continue;
+      const host = peers.find(p=> p.id===l.fromId);
+      const subnet = subnets.find(s=> s.id===l.toId) || subnets.find(s=> s.id===l.fromId);
+      if (!host || !subnet) continue;
+      // Line from host to subnet border
+      const A = toScreen(host.x, host.y);
+      const cx = subnet.x, cy = subnet.y; const hw = subnet.width/2, hh = subnet.height/2;
+      const vx = host.x - cx, vy = host.y - cy;
+      let Bx = cx, By = cy;
+      if (vx===0 && vy===0){ Bx=cx+hw; By=cy; }
+      else { const sx = Math.abs(vx)/(hw||1e-6), sy = Math.abs(vy)/(hh||1e-6); const t=Math.max(sx,sy)||1; Bx=cx+vx/t; By=cy+vy/t; }
+      const B = toScreen(Bx, By);
+      // Color from subnet rgba
+      let strokeStyle = '#2196F3';
+      const raw = (subnet as any).rgba; if (typeof raw==='number'){ const r=(raw>>24)&0xFF,g=(raw>>16)&0xFF,b=(raw>>8)&0xFF; strokeStyle=`rgba(${r},${g},${b},1)`; }
+      const active = ui?.hoverPeerId===host.id || ui?.hoverSubnetId===subnet.id || ui?.hoverLinkId===(l as any).id;
+      ctx.save(); ctx.lineWidth=2; ctx.setLineDash([10,6]); ctx.strokeStyle=strokeStyle; ctx.lineDashOffset = active ? -frame*0.8 : 0;
+      ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke(); ctx.setLineDash([]);
+      if (active){
+        anyAnim=true;
+        // Label with service name
+        const label = (l as any).serviceName || 'service'; const mx=(A.x+B.x)/2, my=(A.y+B.y)/2; ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='600 12px Roboto, sans-serif';
+        const padX=8, padY=6; const textW=ctx.measureText(label).width; const boxW=textW+padX*2, boxH=14+padY*2;
+        ctx.beginPath(); (ctx as any).roundRect?.(mx-boxW/2, my-boxH/2, boxW, boxH, 5); ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fill(); ctx.strokeStyle=strokeStyle; ctx.lineWidth=1; ctx.stroke(); ctx.fillStyle='#fff'; ctx.fillText(label, mx, my); ctx.restore();
+      }
+      ctx.restore();
+    }
+    if (anyAnim && invalidateFn) requestAnimationFrame(()=> invalidateFn && invalidateFn());
+  }
+
+  function drawSubnetSubnetLinks(ctx:CanvasRenderingContext2D){
+    const { links, subnets, ui } = deps();
+    let anyAnim=false;
+    for (const l of links){
+      if (l.kind !== 'subnet-subnet') continue;
+      const sA = subnets.find(s=> s.id===l.fromId) || subnets.find(s=> s.id===l.toId);
+      const sB = subnets.find(s=> s.id===l.toId) || subnets.find(s=> s.id===l.fromId);
+      if (!sA || !sB) continue;
+      const cxA=sA.x, cyA=sA.y, hwA=sA.width/2, hhA=sA.height/2; const cxB=sB.x, cyB=sB.y, hwB=sB.width/2, hhB=sB.height/2;
+      const vx=cxB-cxA, vy=cyB-cyA; let Ax=cxA, Ay=cyA, Bx=cxB, By=cyB;
+      if (vx===0 && vy===0){ Ax=cxA+hwA; Ay=cyA; Bx=cxB-hwB; By=cyB; }
+      else { const tA=Math.max(Math.abs(vx)/(hwA||1e-6), Math.abs(vy)/(hhA||1e-6))||1; Ax=cxA+vx/tA; Ay=cyA+vy/tA; const tB=Math.max(Math.abs(vx)/(hwB||1e-6), Math.abs(vy)/(hhB||1e-6))||1; Bx=cxB-vx/tB; By=cyB-vy/tB; }
+  const A=toScreen(Ax,Ay), B=toScreen(Bx,By);
+  const Mx = (A.x + B.x) / 2, My = (A.y + B.y) / 2;
+  // Gradient color from subnet A to subnet B
+  function rgbOf(raw:number){ return { r:(raw>>24)&0xFF, g:(raw>>16)&0xFF, b:(raw>>8)&0xFF } }
+      let colorA = '#7CF29A';
+      let colorB = '#7CF29A';
+  if (typeof (sA as any).rgba==='number') { const a=rgbOf((sA as any).rgba); colorA = `rgba(${a.r},${a.g},${a.b},1)`; }
+  if (typeof (sB as any).rgba==='number') { const b=rgbOf((sB as any).rgba); colorB = `rgba(${b.r},${b.g},${b.b},1)`; }
+      // Mid color (for visual continuity at the center)
+      function mix(c1:string, c2:string){
+        const m1 = /rgba?\((\d+),(\d+),(\d+)/.exec(c1);
+        const m2 = /rgba?\((\d+),(\d+),(\d+)/.exec(c2);
+        if (!m1 || !m2) return c1;
+        const r = Math.round((+m1[1] + +m2[1]) / 2), g = Math.round((+m1[2] + +m2[2]) / 2), b = Math.round((+m1[3] + +m2[3]) / 2);
+        return `rgba(${r},${g},${b},1)`;
+      }
+      const colorMid = mix(colorA, colorB);
+      const active = ui?.hoverSubnetId===sA.id || ui?.hoverSubnetId===sB.id || ui?.hoverLinkId===(l as any).id;
+  // Draw two halves, each moving towards the center
+  const speed = (frame * 0.8);
+  ctx.save(); ctx.lineWidth=2; ctx.setLineDash([10,6]);
+  // First half: A -> M
+  const gradA = ctx.createLinearGradient(A.x, A.y, Mx, My); gradA.addColorStop(0, colorA); gradA.addColorStop(1, colorMid);
+  ctx.strokeStyle = gradA; ctx.lineDashOffset = active ? -speed : 0; ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(Mx, My); ctx.stroke();
+  // Second half: B -> M
+  const gradB = ctx.createLinearGradient(B.x, B.y, Mx, My); gradB.addColorStop(0, colorB); gradB.addColorStop(1, colorMid);
+  ctx.strokeStyle = gradB; ctx.lineDashOffset = active ? -speed : 0; ctx.beginPath(); ctx.moveTo(B.x, B.y); ctx.lineTo(Mx, My); ctx.stroke();
+  ctx.setLineDash([]); ctx.restore();
+  if (active) anyAnim = true;
+      if (active){
+        // Hover label: cidrA<->cidrB at midpoint
+        const label = `subnets linked`;
+        const mx=(A.x+B.x)/2, my=(A.y+B.y)/2; ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='600 12px Roboto, sans-serif';
+        const padX=8, padY=6; const textW=ctx.measureText(label).width; const boxW=textW+padX*2, boxH=14+padY*2;
+  ctx.beginPath(); (ctx as any).roundRect?.(mx-boxW/2, my-boxH/2, boxW, boxH, 5); ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fill(); ctx.strokeStyle=colorA; ctx.lineWidth=1; ctx.stroke(); ctx.fillStyle='#fff'; ctx.fillText(label, mx, my); ctx.restore();
       }
     }
     if (anyAnim && invalidateFn) requestAnimationFrame(()=> invalidateFn && invalidateFn());
@@ -396,7 +463,9 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   // Advance shared animation frame for all passes
   frame += (now - lastTs) * 0.06; lastTs = now;
   drawLinks(ctx, now);
+  drawSubnetSubnetLinks(ctx);
     drawMembershipLinks(ctx);
+  drawSubnetServiceLinks(ctx);
     drawPeers(ctx);
     drawSelection(ctx);
   drawHoverSubnetGhost(ctx); // no-op now

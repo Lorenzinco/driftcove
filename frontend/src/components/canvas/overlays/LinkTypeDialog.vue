@@ -33,8 +33,16 @@
             </v-radio>
         </v-radio-group>
         <v-expand-transition>
-          <div v-if="mode==='service'" class="mt-2">
-            <v-select v-model="selectedService" :items="serviceItems" item-title="label" item-value="value" label="Service" density="comfortable" variant="outlined" />
+          <div v-if="mode==='service' || mode==='subnet-service'" class="mt-2">
+            <v-select
+              v-model="selectedService"
+              :items="toServiceItems"
+              item-title="label"
+              item-value="value"
+              label="Service"
+              density="comfortable"
+              variant="outlined"
+            />
           </div>
         </v-expand-transition>
         <div v-if="mode==='peer-subnet'" class="mt-2">
@@ -64,7 +72,7 @@ const fromId = ref('')
 const toId = ref('')
 const fromType = ref<'peer'|'subnet'>('peer')
 const toType = ref<'peer'|'subnet'>('peer')
-const mode = ref<'p2p'|'service'|'peer-subnet'|'subnet-subnet'>('p2p')
+const mode = ref<'p2p'|'service'|'peer-subnet'|'subnet-subnet'|'subnet-service'>('p2p')
 const selectedService = ref<string| null>(null)
 const error = ref<string|null>(null)
 
@@ -75,6 +83,10 @@ const toSubnet = computed(()=> toType.value==='subnet' ? store.subnets.find(s=> 
 const fromLabel = computed(()=> fromType.value==='peer' ? (fromPeer.value?.name || '') : (fromSubnet.value?.name || fromSubnet.value?.cidr || 'Subnet'))
 const toLabel = computed(()=> toType.value==='peer' ? (toPeer.value?.name || '') : (toSubnet.value?.name || toSubnet.value?.cidr || 'Subnet'))
 const toIsHost = computed(()=> toType.value==='peer' && !!toPeer.value?.host && Object.keys(toPeer.value?.services||{}).length>0)
+const toServiceItems = computed(()=> {
+  // If destination is a host peer, list its services. If destination is a subnet, we need a service list elsewhere; for now support host peer path
+  return Object.entries(toPeer.value?.services||{}).map(([name, svc]:any)=> ({ label: `${name}${svc.port? ' (:'+svc.port+')':''}`, value: name }))
+})
 const serviceItems = computed(()=> Object.entries(toPeer.value?.services||{}).map(([name, svc]:any)=> ({ label: `${name}${svc.port? ' (:'+svc.port+')':''}`, value: name })))
 
 const backend = useBackendInteractionStore()
@@ -83,6 +95,7 @@ const canSubmit = computed(()=> {
   if (submitting.value) return false
   if (mode.value==='peer-subnet') return !!fromPeer.value && !!toSubnet.value
   if (mode.value==='subnet-subnet') return !!fromSubnet.value && !!toSubnet.value
+  if (mode.value==='subnet-service') return !!fromSubnet.value && !!toPeer.value && toIsHost.value && !!selectedService.value
   // p2p/service
   return !!fromPeer.value && !!toPeer.value && (mode.value==='p2p' || (mode.value==='service' && selectedService.value))
 })
@@ -95,8 +108,13 @@ function show(from:string, to:string, options?: { fromType?: 'peer'|'subnet'; to
   if (fromType.value==='peer' && toType.value==='peer') mode.value='p2p';
   else if (fromType.value==='peer' && toType.value==='peer' /* service override left via UI */) mode.value='p2p';
   else if (fromType.value==='peer' && toType.value==='subnet') mode.value='peer-subnet';
-  else if (fromType.value==='subnet' && toType.value==='peer') { error.value='Subnet to Peer not supported. Start from Peer.'; mode.value='peer-subnet'; }
+  else if (fromType.value==='subnet' && toType.value==='peer') {
+    // Treat as peer-subnet by swapping roles for UX: we only allow creating membership from a peer to a subnet
+    mode.value='peer-subnet';
+  }
   else if (fromType.value==='subnet' && toType.value==='subnet') mode.value='subnet-subnet';
+  // subnet -> host peer's service
+  if (fromType.value==='subnet' && toType.value==='peer' && toIsHost.value) mode.value='subnet-service'
   open.value=true
 }
 function cancel(){ open.value=false; store.tool='select' }
@@ -129,7 +147,17 @@ async function submit(){
       const ok = await backend.connectPeerToSubnet(aUser, subnetCidr)
       if (!ok){ error.value = backend.lastError || 'Backend peer-subnet connect failed'; return }
     } else if (mode.value==='subnet-subnet'){
-      alert('Subnet to Subnet linking not implemented yet. Backend endpoint pending.');
+      const aCidr = fromSubnet.value?.cidr; const bCidr = toSubnet.value?.cidr
+      if (!aCidr || !bCidr){ error.value='Missing subnets'; return }
+      const ok = await backend.connectSubnetToSubnet(aCidr, bCidr)
+      if (!ok){ error.value = backend.lastError || 'Backend subnet-subnet connect failed'; return }
+    } else if (mode.value==='subnet-service'){
+      // From subnet to destination host peer's chosen service
+      const subnetCidr = fromSubnet.value?.cidr
+      const svcName = selectedService.value
+      if (!subnetCidr || !svcName){ error.value='Missing subnet or service'; return }
+      const ok = await backend.connectSubnetToService(subnetCidr, svcName)
+      if (!ok){ error.value = backend.lastError || 'Backend subnet-service connect failed'; return }
     }
   open.value=false; store.tool='select'
   } finally { submitting.value=false }

@@ -64,12 +64,36 @@ def apply_config_from_database():
         subnets = db.get_subnets()
         subnet_links = db.get_links_between_subnets_and_peers()
         for subnet in subnets:
-            peers_linked = subnet_links[subnet.name] if subnet.name in subnet_links else []
+            peers_linked = subnet_links[subnet.subnet] if subnet.subnet in subnet_links else []
             if len(peers_linked) > 0:
                 logging.info(f"Subnet {subnet.name} ({subnet.subnet}) has peers {[p.username for p in peers_linked]}")
             for peer in peers_linked:
                 allow_link(subnet.subnet, peer.address)
                 allow_link(peer.address, subnet.subnet)
+
+        logging.info("Loading from db subnet to subnet links")
+        subnet_to_subnet_links = db.get_links_between_subnets()
+        for subnet in subnets:
+            linked_subnets = subnet_to_subnet_links[subnet.subnet] if subnet.subnet in subnet_to_subnet_links else []
+            if len(linked_subnets) > 0:
+                logging.info(f"Subnet {subnet.name} ({subnet.subnet}) is linked to {[s.name for s in linked_subnets]}")
+            for linked_subnet in linked_subnets:
+                allow_link(subnet.subnet, linked_subnet.subnet)
+                allow_link(linked_subnet.subnet, subnet.subnet)
+
+        logging.info("Loading from db subnet to service links")
+        subnet_to_service_links = db.get_links_from_subnets_to_services()
+        for subnet in subnets:
+            services_linked = subnet_to_service_links[subnet.subnet] if subnet.subnet in subnet_to_service_links else []
+            if len(services_linked) > 0:
+                logging.info(f"Subnet {subnet.name} ({subnet.subnet}) has services {[s.name for s in services_linked]}")
+            for service in services_linked:
+                host = db.get_service_host(service)
+                if host is None:
+                    raise Exception(f"Service host for service {service.name} not found")
+                allow_link_with_port(subnet.subnet, host.address, service.port)
+                allow_answer_link(host.address, subnet.subnet)
+
 
         default_policy_drop()
         logging.info("Loaded and applied WireGuard configuration from database")

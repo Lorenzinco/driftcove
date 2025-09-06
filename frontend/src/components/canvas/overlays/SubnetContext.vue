@@ -6,6 +6,7 @@
     @create-peer="openAddPeer(menu.subnetId)"
   @create-subnet="openCreateSubnet()"
     @info="openInfo(menu.subnetId)"
+  @connect="startConnect(menu.subnetId)"
   />
   <div v-if="menu.open" class="subnet-menu-backdrop" @mousedown.stop @click="hideMenu" />
   <SubnetInfoDialog ref="infoDialog" v-model="infoOpen" />
@@ -43,6 +44,14 @@ function openCreateSubnet(){
   // We need world coords; page handler already expects worldX/worldY from click flow.
   // Fallback: let page convert using last pointer; we can dispatch a custom event.
   window.dispatchEvent(new CustomEvent('request-add-subnet-at-screen', { detail: { screenX: x, screenY: y } }));
+}
+
+function startConnect(id:string){
+  hideMenu();
+  // Switch tool mode to connect and notify the canvas to initialize with this subnet as source
+  store.tool = 'connect' as any;
+  store.selection = { type: 'subnet', id, name: store.subnets.find(s=>s.id===id)?.name || 'Subnet' } as any;
+  window.dispatchEvent(new CustomEvent('start-connect-from-subnet', { detail: { id } }));
 }
 
 function onKey(e:KeyboardEvent){ if (e.key==='Escape' && menu.open) hideMenu(); }

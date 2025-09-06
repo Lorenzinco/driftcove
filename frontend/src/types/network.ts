@@ -36,7 +36,7 @@ export interface Link {
   id: ID;
   fromId: ID;
   toId: ID;
-  kind: 'p2p' | 'service' | 'membership';
+  kind: 'p2p' | 'service' | 'membership' | 'subnet-subnet' | 'subnet-service';
   serviceName?: string;
 }
 

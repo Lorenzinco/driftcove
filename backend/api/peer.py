@@ -31,13 +31,15 @@ def create_peer(username:str , subnet:str, _: Annotated[str, Depends(verify_toke
             if subnet is None:
                 raise HTTPException(status_code=404, detail="Subnet not found")
             if address is not None:
-                if not db.is_ip_already_assigned(address) and db.is_ip_in_subnet(address, subnet):
+                if db.is_ip_already_assigned(address):
                     raise HTTPException(status_code=400, detail="IP address is already assigned")
+                if not db.is_ip_in_subnet(address, subnet):
+                    raise HTTPException(status_code=400, detail="IP address specified is not in the subnet")
             else:
                 address = db.get_avaliable_ip(subnet)
             # if an address is not found by dhcp then it is none, no repetition here
             if address is None:
-                raise HTTPException(status_code=500, detail="No available IPs in subnet")
+                raise HTTPException(status_code=401, detail="No available IPs in subnet")
             # on creation put the peer in the middle of the subnet
 
             peer = Peer(username=username, public_key=keys["public_key"], preshared_key=keys["preshared_key"], address=address, x=subnet.x, y=subnet.y)

@@ -62,6 +62,10 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 				const serviceLinksDict: Record<string, any[]> = topo.service_links || {}
 				const p2pLinksDict: Record<string, any[]> = topo.p2p_links || {}
 				const subnetLinksDict: Record<string, any[]> = topo.subnet_links || {}
+				// New link types
+				const subnetToSubnetDict: Record<string, any[]> = topo.subnet_to_subnet_links || {}
+				// Renamed backend field: now subnet_to_service_links (subnet -> [Service])
+				const subnetToServiceDict: Record<string, any[]> = topo.subnet_to_service_links || {}
 				const networkDict: Record<string, any[]> = topo.network || {}
 
 				// Subnets
@@ -141,6 +145,39 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 						if (c?.public_key && c.public_key !== hostPeer.publicKey && peerByPublic[c.public_key]) {
 							links.push({ id: `link_${linkCounter++}`, fromId: hostPeer.id, toId: c.public_key, kind: 'service', serviceName })
 						}
+					}
+				}
+
+				// Subnet-to-subnet links: dict cidrA -> [subnetObjB,...] (undirected)
+				{
+					const seen = new Set<string>()
+					function pairKey(a:string,b:string){ return a < b ? `${a}::${b}` : `${b}::${a}` }
+					for (const cidrA of Object.keys(subnetToSubnetDict)){
+						const sidA = cidrA
+						const arr = subnetToSubnetDict[cidrA] || []
+						for (const s of arr){
+							const cidrB = s?.subnet || s?.cidr || s // tolerate shapes
+							if (!cidrB || typeof cidrB !== 'string') continue
+							const sidB = cidrB
+							if (sidA === sidB) continue
+							const pk = pairKey(sidA,sidB)
+							if (seen.has(pk)) continue
+							seen.add(pk)
+							links.push({ id: `link_${linkCounter++}`, fromId: sidA, toId: sidB, kind: 'subnet-subnet' })
+						}
+					}
+				}
+
+				// Subnet-to-service links: dict subnetCIDR -> [Service]
+				for (const cidr of Object.keys(subnetToServiceDict)){
+					const sid = cidr
+					const servicesArr = subnetToServiceDict[cidr] || []
+					for (const svc of servicesArr){
+						const svcName = (svc && (svc.name || (typeof svc === 'string' ? svc : '')))
+						if (!svcName) continue
+						const hostPeer = peersMeta.find(p => p.services && p.services[svcName])
+						if (!hostPeer) continue
+						links.push({ id: `link_${linkCounter++}`, fromId: hostPeer.id, toId: sid, kind: 'subnet-service', serviceName: svcName })
 					}
 				}
 
@@ -249,7 +286,43 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 			const subnet_links: Record<string, any[]> = {}
 			for (const [cidr, arr] of Object.entries(subnetMembers)) subnet_links[cidr] = arr
 
-			return { subnets, peers, services, p2p_links, service_links, subnet_links }
+			// subnet_to_subnet_links: dict subnetCIDR -> [Subnet]
+			const subnet_to_subnet_links: Record<string, any[]> = {}
+			;(function buildSubnetToSubnet(){
+				function pairKey(a:string,b:string){ return a < b ? `${a}::${b}` : `${b}::${a}` }
+				const seen = new Set<string>()
+				for (const l of netStore.links.filter(l=> l.kind==='subnet-subnet')){
+					const a = netStore.subnets.find(s=> s.id===l.fromId)
+					const b = netStore.subnets.find(s=> s.id===l.toId)
+					if (!a || !b) continue
+					const pk = pairKey(a.cidr, b.cidr); if (seen.has(pk)) continue; seen.add(pk)
+					const arrA = subnet_to_subnet_links[a.cidr] || (subnet_to_subnet_links[a.cidr] = [])
+					arrA.push({ subnet: b.cidr, name: b.name, description: b.description, x: b.x, y: b.y, width: b.width, height: b.height, rgba: (b as any).rgba })
+					const arrB = subnet_to_subnet_links[b.cidr] || (subnet_to_subnet_links[b.cidr] = [])
+					arrB.push({ subnet: a.cidr, name: a.name, description: a.description, x: a.x, y: a.y, width: a.width, height: a.height, rgba: (a as any).rgba })
+				}
+			})()
+
+			// subnet_to_service_links: dict subnetCIDR -> [Service]
+			const subnet_to_service_links: Record<string, any[]> = {}
+			for (const l of netStore.links.filter(l=> l.kind==='subnet-service')){
+				const subnet = netStore.subnets.find(s=> s.id===l.toId) || netStore.subnets.find(s=> s.id===l.fromId)
+				const svcName = (l as any).serviceName as string | undefined
+				if (!subnet || !svcName) continue
+				// Find service definition (from services map we built above if available)
+				const svcDef = services[svcName] || (function(){
+					// Fallback: attempt to build from host peer services
+					const host = netStore.peers.find(p=> (p.services||{})[svcName])
+					const svc = host?.services?.[svcName]
+					return svc ? { name: svcName, department: (svc as any).department, port: (svc as any).port, description: (svc as any).description || '' } : undefined
+				})()
+				if (!svcDef) continue
+				const arr = subnet_to_service_links[subnet.cidr] || (subnet_to_service_links[subnet.cidr] = [])
+				// Ensure uniqueness by name
+				if (!arr.some((s:any)=> (s && s.name) === svcDef.name)) arr.push(svcDef)
+			}
+
+			return { subnets, peers, services, p2p_links, service_links, subnet_links, subnet_to_subnet_links, subnet_to_service_links }
 		},
 		// Create subnet helper (legacy endpoints retained if still active backend-side)
 		async createSubnet(subnet: string, name: string, description: string, x:number, y:number, width:number, height:number, rgba:number){
@@ -272,6 +345,18 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 		},
 		async disconnectPeerFromService(username: string, serviceName: string){
 			try { this.lastError=null; await getClient().delete('/api/service/disconnect', { params:{ username, service_name: serviceName }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to disconnect peer from service'; return false }
+		},
+		async connectSubnetToSubnet(subnetA: string, subnetB: string){
+			try { this.lastError=null; await getClient().post('/api/network/subnets/connect', null, { params:{ subnet_a: subnetA, subnet_b: subnetB }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to connect subnets'; return false }
+		},
+		async disconnectSubnetFromSubnet(subnetA: string, subnetB: string){
+			try { this.lastError=null; await getClient().delete('/api/network/subnets/connect', { params:{ subnet_a: subnetA, subnet_b: subnetB }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to disconnect subnets'; return false }
+		},
+		async connectSubnetToService(subnetCidr: string, serviceName: string){
+			try { this.lastError=null; await getClient().post('/api/service/subnet/connect', null, { params:{ subnet_address: subnetCidr, service_name: serviceName }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to connect subnet to service'; return false }
+		},
+		async disconnectSubnetFromService(subnetCidr: string, serviceName: string){
+			try { this.lastError=null; await getClient().delete('/api/service/subnet/disconnect', { params:{ subnet_address: subnetCidr, service_name: serviceName }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to disconnect subnet from service'; return false }
 		},
 		async fetchPeerConfig(username: string){
 			try { this.lastError=null; const { data } = await getClient().get<{configuration:string}>('/api/peer/config', { params:{ username } }); return data.configuration } catch(e:any){ this.lastError = e?.message || 'Failed to fetch config'; return null }

@@ -136,3 +136,56 @@ def service_disconnect(username: str, service_name: str, _: Annotated[str, Depen
             raise HTTPException(status_code=500, detail=f"Failed to disconnect {username} from {service_name}: {e}")
     return {"message": f"Peer {username} disconnected from service {service.name}"}
         
+@router.post("/subnet/connect",tags=["service","subnets"])
+def connect_subnet_to_service(subnet_address:str, service_name: str, _: Annotated[str, Depends(verify_token)]):
+    """
+    Connect all peers in a subnet to a service. This will allow all peers in the subnet to connect to the service.
+    """
+    with lock.write_lock(), state_manager.saved_state():
+        try:
+            subnet = db.get_subnet_by_address(subnet_address)
+            if subnet is None:
+                raise HTTPException(status_code=404, detail="Subnet not found")
+            
+            service = db.get_service_by_name(service_name)
+            if service is None:
+                raise HTTPException(status_code=404, detail="Service not found")
+            
+            host = db.get_service_host(service)
+            if host is None:
+                raise HTTPException(status_code=404, detail="Service host not found")
+            
+            db.add_link_from_subnet_to_service(subnet, service)
+            allow_link_with_port(subnet.subnet, host.address, service.port)
+            allow_answer_link(host.address, subnet.subnet)
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to connect subnet {subnet_address} to service {service_name}: {e}")
+    return {"message": f"Subnet {subnet_address} connected to service {service.name}"}
+
+@router.delete("/subnet/disconnect",tags=["service","subnets"])
+def disconnect_subnet_from_service(subnet_address:str, service_name: str, _: Annotated[str, Depends(verify_token)]):
+    """
+    Disconnect all peers in a subnet from a service. This will remove the ability for all peers in the subnet to connect to the service.
+    """
+    with lock.write_lock(), state_manager.saved_state():
+        try:
+            subnet = db.get_subnet_by_address(subnet_address)
+            if subnet is None:
+                raise HTTPException(status_code=404, detail="Subnet not found")
+            
+            service = db.get_service_by_name(service_name)
+            if service is None:
+                raise HTTPException(status_code=404, detail="Service not found")
+            
+            host = db.get_service_host(service)
+            if host is None:
+                raise HTTPException(status_code=404, detail="Service host not found")
+            
+            db.remove_link_from_subnet_to_service(subnet, service)
+            remove_link_with_port(subnet.subnet, host.address, service.port)
+            remove_answers_link(host.address, subnet.subnet)
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to disconnect subnet {subnet_address} from service {service_name}: {e}")
+    return {"message": f"Subnet {subnet_address} disconnected from service {service.name}"}

@@ -46,19 +46,41 @@ export function createInteractions(getPeers:()=>Peer[], getSubnets:()=>Subnet[],
     }
     for (let i=links.length-1;i>=0;i--){
       const l = links[i];
-      if ((l as any).kind === 'membership') {
+      if ((l as any).kind === 'membership' || (l as any).kind === 'subnet-service') {
         // Peer to subnet edge
         const peer:any = peers.find(p=> p.id===l.fromId) || peers.find(p=> p.id===l.toId);
         const subnet = subnets.find(s=> s.id===l.toId) || subnets.find(s=> s.id===l.fromId);
         if (!peer || !subnet) continue;
-        // Ignore membership link if it targets the peer's own containing subnet
-        if (peer.subnetId && peer.subnetId === subnet.id) continue;
+        // Ignore membership link if it targets the peer's own containing subnet (but not for subnet-service)
+        if ((l as any).kind === 'membership') {
+          if (peer.subnetId && peer.subnetId === subnet.id) continue;
+        }
         const cx = subnet.x, cy = subnet.y; const hw = subnet.width/2, hh = subnet.height/2;
         const vx = peer.x - cx, vy = peer.y - cy;
         let Bx = cx, By = cy;
         if (vx === 0 && vy === 0){ Bx = cx + hw; By = cy; }
         else { const sx = Math.abs(vx)/(hw||1e-6), sy = Math.abs(vy)/(hh||1e-6); const t = Math.max(sx,sy)||1; Bx = cx + vx/t; By = cy + vy/t; }
         const d = distPointToSeg(pt.x, pt.y, peer.x, peer.y, Bx, By);
+        if (d <= threshold) return l;
+        continue;
+      }
+      if ((l as any).kind === 'subnet-subnet') {
+        const sA = subnets.find(s=> s.id===l.fromId) || subnets.find(s=> s.id===l.toId);
+        const sB = subnets.find(s=> s.id===l.toId) || subnets.find(s=> s.id===l.fromId);
+        if (!sA || !sB) continue;
+        // Compute boundary points along center line
+        const cxA = sA.x, cyA = sA.y; const hwA = sA.width/2, hhA = sA.height/2;
+        const cxB = sB.x, cyB = sB.y; const hwB = sB.width/2, hhB = sB.height/2;
+        const vx = cxB - cxA, vy = cyB - cyA;
+        let Ax = cxA, Ay = cyA, Bx = cxB, By = cyB;
+        if (vx === 0 && vy === 0){ Ax = cxA + hwA; Ay = cyA; Bx = cxB - hwB; By = cyB; }
+        else {
+          const tA = Math.max(Math.abs(vx)/(hwA||1e-6), Math.abs(vy)/(hhA||1e-6)) || 1;
+          Ax = cxA + vx/tA; Ay = cyA + vy/tA;
+          const tB = Math.max(Math.abs(vx)/(hwB||1e-6), Math.abs(vy)/(hhB||1e-6)) || 1;
+          Bx = cxB - vx/tB; By = cyB - vy/tB;
+        }
+        const d = distPointToSeg(pt.x, pt.y, Ax, Ay, Bx, By);
         if (d <= threshold) return l;
         continue;
       }

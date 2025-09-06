@@ -21,6 +21,12 @@
             title="Add Peer in this Subnet"
             @click="$emit('create-peer')"
           />
+          <v-list-item
+            value="connect"
+            prepend-icon="mdi-connection"
+            title="Connect…"
+            @click="$emit('connect')"
+          />
           <v-divider class="my-1" />
             <v-list-item
               value="info"
@@ -36,7 +42,7 @@
 
 <script setup lang="ts">
 defineProps<{ open: boolean; x: number; y: number }>();
-defineEmits<{ (e:'create-peer'): void; (e:'info'): void; (e:'create-subnet'): void }>();
+defineEmits<{ (e:'create-peer'): void; (e:'info'): void; (e:'create-subnet'): void; (e:'connect'): void }>();
 </script>
 
 <style scoped>

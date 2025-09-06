@@ -6,6 +6,7 @@ from backend.core.lock import lock
 from backend.core.database import db
 from backend.core.logger import logging
 from backend.core.lifespan import apply_config_from_database
+from backend.core.iptables import allow_link, remove_link
 from typing import Annotated
 
 router = APIRouter(tags=["network"])
@@ -40,6 +41,8 @@ def get_topology(_: Annotated[str, Depends(verify_token)])->dict:
     p2p_links : dict[str, list[Peer]] = {}
     service_links : dict[str, list[Peer]] = {}
     subnet_links : dict[str, list[Peer]] = {}
+    subnet_to_subnet_links : dict[str, list[Subnet]] = {}
+    subnet_to_service_links : dict[str, list[Service]] = {}
 
 
     try:
@@ -57,13 +60,15 @@ def get_topology(_: Annotated[str, Depends(verify_token)])->dict:
                 services[service.name] = service
 
             p2p_links = db.get_links_between_peers()
-
             service_links = db.get_links_between_peers_and_services()
-
             subnet_links = db.get_links_between_subnets_and_peers()
+            subnet_to_subnet_links = db.get_links_between_subnets()
+            subnet_to_service_links = db.get_links_from_subnets_to_services()
+
+
             logging.info("Retrieved full topology from the database.")
 
-            topology = Topology(subnets=subnets, peers=peers, services=services, network=network, service_links=service_links, p2p_links=p2p_links, subnet_links=subnet_links)
+            topology = Topology(subnets=subnets, peers=peers, services=services, network=network, service_links=service_links, p2p_links=p2p_links, subnet_links=subnet_links, subnet_to_subnet_links=subnet_to_subnet_links, subnet_to_service_links=subnet_to_service_links)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Topology get failed: {e}")
@@ -152,6 +157,34 @@ def upload_topology(topology: Topology, _: Annotated[str, Depends(verify_token)]
                             raise HTTPException(status_code=404, detail=f"Subnet with address {subnet.subnet} does not exist")
                         db.add_link_from_peer_to_subnet(peer_in_db, subnet_in_db)
 
+            # Create all subnet-to-subnet links (undirected, de-duplicated)
+            seen_pairs: set[tuple[str, str]] = set()
+            for subnet_addr, linked_subnets in topology.subnet_to_subnet_links.items():
+                for linked_subnet in linked_subnets:
+                    a, b = sorted([subnet_addr, linked_subnet.subnet])
+                    key = (a, b)
+                    if key in seen_pairs:
+                        continue
+                    subnet_a_obj = db.get_subnet_by_address(a)
+                    subnet_b_obj = db.get_subnet_by_address(b)
+                    if subnet_a_obj is None:
+                        raise HTTPException(status_code=404, detail=f"Subnet {a} does not exist")
+                    if subnet_b_obj is None:
+                        raise HTTPException(status_code=404, detail=f"Subnet {b} does not exist")
+                    db.add_link_between_subnets(subnet_a_obj, subnet_b_obj)
+                    seen_pairs.add(key)
+
+            # Create all subnet-to-service links
+            for subnet_addr, services in topology.subnet_to_service_links.items():
+                subnet_in_db = db.get_subnet_by_address(subnet_addr)
+                if subnet_in_db is None:
+                    raise HTTPException(status_code=404, detail=f"Subnet with address {subnet_addr} does not exist")
+                for service in services:
+                    service_in_db = db.get_service_by_name(service.name)
+                    if service_in_db is None:
+                        raise HTTPException(status_code=404, detail=f"Service with name {service.name} does not exist")
+                    db.add_link_from_subnet_to_service(subnet_in_db, service_in_db)
+
             # Finally, apply the new configuration
             apply_config_from_database()
 
@@ -164,3 +197,45 @@ def upload_topology(topology: Topology, _: Annotated[str, Depends(verify_token)]
 @router.get("/status",tags=["network"])
 def status():
     return {"status": "running"}
+
+@router.post("/subnets/connect",tags=["network","subnets"])
+def create_link_between_two_subnets(subnet_a: str, subnet_b: str, _: Annotated[str, Depends(verify_token)]):
+    """
+    Create a link between two subnets. This will allow all peers in subnet A to communicate with all peers in subnet B.
+    """
+    try:
+        with lock.write_lock(), state_manager.saved_state():
+            subnet_a_obj = db.get_subnet_by_address(subnet_a)
+            subnet_b_obj = db.get_subnet_by_address(subnet_b)
+            if subnet_a_obj is None:
+                raise HTTPException(status_code=404, detail=f"Subnet {subnet_a} does not exist")
+            if subnet_b_obj is None:
+                raise HTTPException(status_code=404, detail=f"Subnet {subnet_b} does not exist")
+            db.add_link_between_subnets(subnet_a_obj, subnet_b_obj)
+            allow_link(subnet_a_obj.subnet, subnet_b_obj.subnet)
+    except HTTPException as e:
+        raise HTTPException(status_code=400, detail=f"Invalid subnet data: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=501, detail=f"Link creation failed: {e}")
+    return {"message": f"Link between {subnet_a} and {subnet_b} created successfully"}
+
+@router.delete("/subnets/connect",tags=["network","subnets"])
+def delete_link_between_two_subnets(subnet_a: str, subnet_b: str, _: Annotated[str, Depends(verify_token)]):
+    """
+    Delete a link between two subnets. This will prevent all peers in subnet A from communicating with all peers in subnet B.
+    """
+    try:
+        with lock.write_lock(), state_manager.saved_state():
+            subnet_a_obj = db.get_subnet_by_address(subnet_a)
+            subnet_b_obj = db.get_subnet_by_address(subnet_b)
+            if subnet_a_obj is None:
+                raise HTTPException(status_code=404, detail=f"Subnet {subnet_a} does not exist")
+            if subnet_b_obj is None:
+                raise HTTPException(status_code=404, detail=f"Subnet {subnet_b} does not exist")
+            db.remove_link_between_subnets(subnet_a_obj, subnet_b_obj)
+            remove_link(subnet_a_obj.subnet, subnet_b_obj.subnet)
+    except HTTPException as e:
+        raise HTTPException(status_code=400, detail=f"Invalid subnet data: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=501, detail=f"Link deletion failed: {e}")
+    return {"message": f"Link between {subnet_a} and {subnet_b} deleted successfully"}

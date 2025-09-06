@@ -35,6 +35,18 @@
             <v-icon icon="mdi-server" size="18" class="text-primary" />
             <span class="font-weight-medium">{{ peerA }} / {{ serviceName }}</span>
           </template>
+          <template v-else-if="mode==='subnet-subnet'">
+            <v-icon icon="mdi-lan" size="18" class="text-success" />
+            <v-icon icon="mdi-arrow-left-right" size="16" class="text-success" />
+            <v-icon icon="mdi-lan" size="18" class="text-success" />
+            <span class="font-weight-medium">{{ peerA }} ↔ {{ peerB }}</span>
+          </template>
+          <template v-else-if="mode==='subnet-service'">
+            <v-icon icon="mdi-server" size="18" class="text-primary" />
+            <v-icon icon="mdi-arrow-right" size="16" class="text-primary" />
+            <v-icon icon="mdi-lan" size="18" class="text-primary" />
+            <span class="font-weight-medium">{{ serviceName }} → {{ peerB }}</span>
+          </template>
           <template v-else><!-- generic service -->
             <v-icon icon="mdi-server" size="18" class="text-primary" />
             <v-icon icon="mdi-arrow-right" size="16" class="text-primary" />
@@ -44,6 +56,8 @@
         </div>
   <p v-if="mode==='p2p'">Are you sure you want to remove this peer-to-peer link? Unrestricted traffic between these peers will stop.</p>
   <p v-else-if="mode==='membership'">Are you sure you want to remove this membership link? This peer will lose access within the subnet.</p>
+  <p v-else-if="mode==='subnet-subnet'">Are you sure you want to remove this subnet-to-subnet link? Traffic between these subnets will be blocked.</p>
+  <p v-else-if="mode==='subnet-service'">Are you sure you want to remove this service-to-subnet link? Peers in the subnet will lose access to the service.</p>
   <p v-else>Are you sure you want to disconnect this service link? Access to the service will be revoked.</p>
         <v-alert v-if="mode==='p2p' && problematic" type="warning" density="compact" class="mt-2" text="This p2p link is problematic because a service link also exists between a host and this peer." />
       </v-card-text>
@@ -60,7 +74,7 @@
 import { computed } from 'vue';
 import type { Link } from '@/types/network';
 
-interface Props { modelValue: boolean; link: Link|null; mode: 'p2p'|'membership'|'service-host'|'service-consumer'|'service-generic'|''; peerA?: string; peerB?: string; serviceName?: string; problematic?: boolean; loading?: boolean }
+interface Props { modelValue: boolean; link: Link|null; mode: 'p2p'|'membership'|'service-host'|'service-consumer'|'service-generic'|'subnet-subnet'|'subnet-service'|''; peerA?: string; peerB?: string; serviceName?: string; problematic?: boolean; loading?: boolean }
 const props = defineProps<Props>();
 const emit = defineEmits<{ (e:'update:modelValue', v:boolean):void; (e:'confirm'):void }>();
 

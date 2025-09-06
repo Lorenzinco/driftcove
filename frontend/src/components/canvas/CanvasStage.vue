@@ -85,6 +85,17 @@ function handleStartConnect(e:any){
   invalidate();
 }
 
+// Global handler to start connect mode from a subnet
+function handleStartConnectFromSubnet(e:any){
+  const id = e?.detail?.id as string;
+  if (!id) return;
+  const s = store.subnets.find(ss=>ss.id===id); if (!s) return;
+  store.tool = 'connect' as any;
+  ui.connect.active = true; ui.connect.fromSubnetId = id; ui.connect.fromPeerId=''; ui.connect.ghostTo = { x: s.x, y: s.y };
+  syncSelection({ type:'subnet', id });
+  invalidate();
+}
+
 // Watch tool changes to clear connect state when leaving the connect tool
 watch(()=>store.tool, (newTool, oldTool)=> {
   if (oldTool==='connect' && newTool!=='connect'){
@@ -388,6 +399,7 @@ onMounted(()=>{
   window.addEventListener('topology-updated', forceInitialRedraw);
   // Allow external trigger to start connect from a specific peer
   window.addEventListener('start-connect-from-peer', handleStartConnect as any);
+  window.addEventListener('start-connect-from-subnet', handleStartConnectFromSubnet as any);
   const c = canvasRef.value!;
   c.addEventListener('wheel', onWheel as any, { passive:false });
   c.addEventListener('mousedown', onMouseDown as any);
@@ -404,6 +416,7 @@ onUnmounted(()=>{
   window.removeEventListener('resize', onResize);
   window.removeEventListener('topology-updated', forceInitialRedraw);
   window.removeEventListener('start-connect-from-peer', handleStartConnect as any);
+  window.removeEventListener('start-connect-from-subnet', handleStartConnectFromSubnet as any);
   const c = canvasRef.value; if (c){ c.removeEventListener('wheel', onWheel as any); c.removeEventListener('mousedown', onMouseDown as any); }
   window.removeEventListener('mousemove', onMouseMove as any);
   window.removeEventListener('mouseup', onMouseUp as any);

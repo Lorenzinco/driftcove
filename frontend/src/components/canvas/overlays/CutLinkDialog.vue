@@ -52,7 +52,12 @@
   <ConfirmCutLinkDialog
     v-model="confirmOpen"
     :link="currentLink"
-  :mode="currentLink ? (currentLink.kind==='p2p' ? 'p2p' : (currentLink.kind==='membership' ? 'membership' : 'service-generic')) : ''"
+  :mode="currentLink ? (
+    currentLink.kind==='p2p' ? 'p2p' :
+    currentLink.kind==='membership' ? 'membership' :
+    currentLink.kind==='subnet-subnet' ? 'subnet-subnet' :
+    currentLink.kind==='subnet-service' ? 'subnet-service' :
+    'service-generic') : ''"
   :peer-a="currentLink ? entityName(currentLink.fromId) : ''"
   :peer-b="currentLink ? entityName(currentLink.toId) : ''"
     :service-name="currentLink?.serviceName"
@@ -116,6 +121,15 @@ const selectItems = computed(()=> links.value.map(l=> {
     const portStr = port!==undefined ? `:${port}` : '';
     return { value: l.id, kind: l.kind, label: `${from} -> ${to}${portStr} (${svcName})`, id: l.id };
   }
+  if (l.kind === 'subnet-subnet') {
+    return { value: l.id, kind: l.kind, label: `${from} ↔ ${to} (subnet link)`, id: l.id };
+  }
+  if (l.kind === 'subnet-service') {
+    const host = store.peers.find(p=> p.id===l.fromId);
+    const svcName = l.serviceName || '';
+    const label = `${host?.name || from} → ${to} (${svcName||'service'})`;
+    return { value: l.id, kind: l.kind, label, id: l.id };
+  }
   if (l.kind === 'membership') {
     return { value: l.id, kind: l.kind, label: `${from} ↔ ${to}`, id: l.id };
   }
@@ -152,6 +166,14 @@ async function performDelete(){
       const subnet = store.subnets.find(s=> s.id===subnetId);
       if (!subnet) return;
       await backend.disconnectPeerFromSubnet(peer.name, subnet.cidr);
+    } else if (link.kind === 'subnet-subnet') {
+      const a = store.subnets.find(s=> s.id===link.fromId) || store.subnets.find(s=> s.id===link.toId);
+      const b = store.subnets.find(s=> s.id===link.toId) || store.subnets.find(s=> s.id===link.fromId);
+      if (a && b) await backend.disconnectSubnetFromSubnet(a.cidr, b.cidr);
+    } else if (link.kind === 'subnet-service') {
+      const subnet = store.subnets.find(s=> s.id===link.toId) || store.subnets.find(s=> s.id===link.fromId);
+      const svcName = link.serviceName || '';
+      if (subnet && svcName) await backend.disconnectSubnetFromService(subnet.cidr, svcName);
     }
   } catch(e){ /* error handled in backend store */ }
   finally {
