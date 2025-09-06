@@ -18,7 +18,10 @@ def get_subnets(_: Annotated[str, Depends(verify_token)]):
     This endpoint will return all the subnets that are currently in the database.
     """
     try:
-        with lock.read_lock():
+        # Use an exclusive lock to serialize access to the single sqlite connection/cursor.
+        # The sqlite3 module is not safe for concurrent operations on one connection,
+        # even with check_same_thread=False.
+        with lock.write_lock():
             subnets = db.get_subnets()
         logging.info(f"Retrieved {len(subnets)} subnets from the database.")
     except Exception as e:
@@ -43,7 +46,8 @@ def get_topology(_: Annotated[str, Depends(verify_token)])->dict:
 
 
     try:
-        with lock.read_lock():
+        # Serialize all DB reads to avoid concurrent use of the same sqlite connection/cursor.
+        with lock.write_lock():
             subnets_fetched = db.get_subnets()
             for subnet in subnets_fetched:
                 peers_in_subnet = db.get_peers_in_subnet(subnet)

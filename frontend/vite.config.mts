@@ -87,7 +87,7 @@ export default defineConfig({
     proxy: {
       // Proxy backend API (FastAPI @ localhost:8000) while keeping relative requests in code
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://192.168.178.24:8000',
         changeOrigin: true,
         headers: {"Authorization": "Bearer supersecuretoken"},
         rewrite: (path) => path.replace(/^\/api/, ''),

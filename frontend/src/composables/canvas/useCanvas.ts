@@ -6,23 +6,33 @@ export function useCanvas() {
   const dpr = window.devicePixelRatio || 1;
   let rafId: number | null = null;
   let needsDraw = true;
+  let ro: ResizeObserver | null = null;
 
   function withCtx<T>(fn:(ctx:CanvasRenderingContext2D, w:number, h:number)=>T): T|undefined {
     const canvas = canvasRef.value; const ctx = ctxRef.value;
     if (!canvas || !ctx) return;
-    const w = canvas.width / dpr, h = canvas.height / dpr;
+  // Report logical drawing size in CSS pixels (1:1 with canvas attrs).
+  const w = canvas.width, h = canvas.height;
     return fn(ctx, w, h);
   }
 
   function resizeToParent() {
     const c = canvasRef.value; if (!c) return;
-    const rect = (c.parentElement as HTMLElement).getBoundingClientRect();
-    const width = Math.max(600, rect.width);
-    const height = Math.max(400, rect.height);
-    c.width = Math.round(width * dpr);
-    c.height = Math.round(height * dpr);
+  const parent = c.parentElement as HTMLElement | null; if (!parent) return;
+  // Compute parent's content box (client size minus paddings) to fit inside padding nicely.
+  const cs = getComputedStyle(parent);
+  const padL = parseFloat(cs.paddingLeft || '0');
+  const padR = parseFloat(cs.paddingRight || '0');
+  const padT = parseFloat(cs.paddingTop || '0');
+  const padB = parseFloat(cs.paddingBottom || '0');
+  const width = Math.max(1, Math.floor(parent.clientWidth - padL - padR));
+  const height = Math.max(1, Math.floor(parent.clientHeight - padT - padB));
+  // Control size via element attributes only (no CSS scaling, no DPR back buffer scaling).
+  c.width = Math.max(1, Math.floor(width));
+  c.height = Math.max(1, Math.floor(height));
     const ctx = c.getContext('2d')!;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // Identity transform; drawing coordinates are in CSS pixels.
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctxRef.value = ctx;
     invalidate();
   }
@@ -37,8 +47,20 @@ export function useCanvas() {
 
   function invalidate() { needsDraw = true; }
 
-  onMounted(() => resizeToParent());
-  onUnmounted(() => { if (rafId != null) cancelAnimationFrame(rafId); });
+  onMounted(() => {
+    resizeToParent();
+    // Observe parent size changes (e.g., layout panes opening/closing) and resize canvas accordingly.
+    const c = canvasRef.value; const parent = c?.parentElement as HTMLElement | null;
+    if (parent && 'ResizeObserver' in window) {
+      ro = new ResizeObserver(() => resizeToParent());
+      ro.observe(parent);
+    }
+  });
+  onUnmounted(() => {
+    if (rafId != null) cancelAnimationFrame(rafId);
+    if (ro) { try { ro.disconnect(); } catch {}
+      ro = null; }
+  });
 
   return { canvasRef, ctxRef, dpr, withCtx, resizeToParent, loop, invalidate };
 }

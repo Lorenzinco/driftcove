@@ -30,4 +30,4 @@ echo "Starting WireGuard..."
 wg-quick up wg0
 chmod u+rw /etc/wireguard/wg0.conf
 echo "Wireguard is up, starting the backend..."
-uvicorn backend.main:app --host 0.0.0.0 --port ${WG_BACKEND_TCP_PORT:-8000} --log-level debug
+uvicorn backend.main:app --host 0.0.0.0 --port ${WG_BACKEND_TCP_PORT:-8000}
