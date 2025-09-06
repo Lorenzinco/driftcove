@@ -10,7 +10,8 @@
   <div class="mb-2"><strong>From:</strong> {{ fromLabel }}</div>
   <div class="mb-4"><strong>To:</strong> {{ toLabel }}</div>
   <v-alert v-if="error" type="error" density="comfortable" class="mb-3">{{ error }}</v-alert>
-  <v-radio-group v-if="mode==='p2p' || mode==='service'" v-model="mode" class="mt-2">
+  <!-- Peer ↔ Peer: choose between p2p or service link -->
+  <v-radio-group v-if="fromType==='peer' && toType==='peer'" v-model="mode" class="mt-2">
           <v-radio value="p2p">
             <template #label>
               <div class="d-flex align-center">
@@ -31,6 +32,30 @@
               </div>
             </template>
             </v-radio>
+        </v-radio-group>
+
+        <!-- Subnet → Peer: choose between membership (peer-subnet) or subnet-service -->
+        <v-radio-group v-if="fromType==='subnet' && toType==='peer'" v-model="mode" class="mt-2">
+          <v-radio value="peer-subnet">
+            <template #label>
+              <div class="d-flex align-center">
+                <v-icon size="18" icon="mdi-hexagon-multiple-outline" class="me-1 text-green" />
+                <v-icon size="18" icon="mdi-arrow-left-right" class="mx-1 text-green" />
+                <v-icon size="18" icon="mdi-account" class="ms-1 text-green" />
+                <span class="ms-2">Subnet membership (make peer a guest)</span>
+              </div>
+            </template>
+          </v-radio>
+          <v-radio :disabled="!toIsHost" value="subnet-service">
+            <template #label>
+              <div class="d-flex align-center">
+                <v-icon size="18" icon="mdi-hexagon-multiple-outline" class="me-1" :class="toIsHost ? 'text-primary' : 'text-disabled'" />
+                <v-icon size="18" icon="mdi-arrow-left-right" class="mx-1" :class="toIsHost ? 'text-primary' : 'text-disabled'" />
+                <v-icon size="18" icon="mdi-server" class="ms-1" :class="toIsHost ? 'text-primary' : 'text-disabled'" />
+                <span class="ms-2">{{ toIsHost ? 'Subnet to Service' : 'Subnet to Service (destination has no services)' }}</span>
+              </div>
+            </template>
+          </v-radio>
         </v-radio-group>
         <v-expand-transition>
           <div v-if="mode==='service' || mode==='subnet-service'" class="mt-2">
@@ -113,8 +138,7 @@ function show(from:string, to:string, options?: { fromType?: 'peer'|'subnet'; to
     mode.value='peer-subnet';
   }
   else if (fromType.value==='subnet' && toType.value==='subnet') mode.value='subnet-subnet';
-  // subnet -> host peer's service
-  if (fromType.value==='subnet' && toType.value==='peer' && toIsHost.value) mode.value='subnet-service'
+  // For subnet -> peer, user can choose subnet-service via radio if destination hosts services
   open.value=true
 }
 function cancel(){ open.value=false; store.tool='select' }
