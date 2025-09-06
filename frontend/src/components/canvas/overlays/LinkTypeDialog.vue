@@ -49,7 +49,7 @@
           <v-alert type="info" density="comfortable" text="Create a membership link from Peer to Subnet." />
         </div>
         <div v-if="mode==='subnet-subnet'" class="mt-2">
-          <v-alert type="info" density="comfortable" text="Subnet to Subnet linking will be implemented by backend. This will just alert for now." />
+          <v-alert type="info" density="comfortable" text="Subnet to Subnet linking means every peer from one subnet can communicate with every peer from another subnet." />
         </div>
       </v-card-text>
       <v-divider />
