@@ -1,3 +1,9 @@
-# Backend:
-    - Check if the service being assigned to a peer already exists properly (by port)
-    
+# frontend
+- rework the network inspector, it looks fairly outdated
+
+# backend
+- TESTING!!!!!
+
+# publishing image
+- Create a separata dockerfile for nginx, a separate dockerfile for the frontend , modify the dockerfile in order to do all the work.
+- HTTPS
