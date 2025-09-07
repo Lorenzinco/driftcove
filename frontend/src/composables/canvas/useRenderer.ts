@@ -52,7 +52,23 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
     for (const s of subnets){
       const tl = toScreen(s.x - s.width/2, s.y - s.height/2);
       const w = s.width * panzoom.zoom; const h = s.height * panzoom.zoom;
-  ctx.save(); ctx.beginPath(); ctx.rect(tl.x, tl.y, w, h);
+  ctx.save();
+  // Rounded rectangle for subnet box
+  ctx.beginPath();
+  const r = 8; // border radius in screen px
+  if ((ctx as any).roundRect) (ctx as any).roundRect(tl.x, tl.y, w, h, r);
+  else {
+    const x0 = tl.x, y0 = tl.y;
+    ctx.moveTo(x0 + r, y0);
+    ctx.lineTo(x0 + w - r, y0);
+    ctx.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
+    ctx.lineTo(x0 + w, y0 + h - r);
+    ctx.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
+    ctx.lineTo(x0 + r, y0 + h);
+    ctx.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r);
+    ctx.lineTo(x0, y0 + r);
+    ctx.quadraticCurveTo(x0, y0, x0 + r, y0);
+  }
   // Subnet fill color: backend supplies 0xRRGGBBAA. Convert to rgba(). Also set stroke to same RGB with full alpha.
   let fillStyle = 'rgba(124,242,154,0.07)'; let strokeStyle = color;
   const raw = (s as any).rgba;
@@ -67,25 +83,41 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   }
   ctx.fillStyle=fillStyle; ctx.fill();
   ctx.strokeStyle=strokeStyle; ctx.lineWidth=2; ctx.setLineDash([8,6]); ctx.stroke(); ctx.setLineDash([]);
-      // Always show subnet name (if provided). Show CIDR only when hovered.
+      // Always show subnet name (if provided). Show improved hover label with box and CIDR shifted right.
       const hasName = !!(s as any).name && (s as any).name.trim().length>0;
       const nameLabel = hasName ? (s as any).name : '';
-      ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.font='600 14px Roboto, sans-serif'; ctx.textAlign='left'; ctx.textBaseline='bottom';
-      if (hasName) {
-        // Base name always visible
-        ctx.fillText(nameLabel, tl.x + 8, tl.y - 6);
-        if (ui?.hoverSubnetId === s.id) {
-          // Append CIDR to right of name (or below) – here appended inline unless name equals CIDR.
-          ctx.save();
-          ctx.font='500 12px Roboto, sans-serif';
-          const nameWidth = ctx.measureText(nameLabel + ' ').width;
-          ctx.fillStyle='rgba(255,255,255,0.75)';
-          ctx.fillText(`(${s.cidr})`, tl.x + 8 + nameWidth, tl.y - 6);
-          ctx.restore();
+      const isHover = ui?.hoverSubnetId === s.id;
+      if (!isHover) {
+        // Non-hover: keep simple name text if present
+        if (hasName) {
+          ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.font='600 14px Roboto, sans-serif'; ctx.textAlign='left'; ctx.textBaseline='bottom';
+          ctx.fillText(nameLabel, tl.x + 8, tl.y - 6);
         }
-      } else if (ui?.hoverSubnetId === s.id) {
-        // No name set: only show CIDR on hover per requirement
-        ctx.fillText(s.cidr, tl.x + 8, tl.y - 6);
+      } else {
+        // Hover: draw rounded outlined box like link labels, containing name and CIDR (CIDR further to the right)
+        const padX = 8, padY = 6;
+        ctx.save();
+        // Measure segments
+        ctx.font='600 13px Roboto, sans-serif';
+        const nameW = hasName ? ctx.measureText(nameLabel).width : 0;
+        const gap = hasName ? 12 : 0; // extra space pushes CIDR noticeably to the right of the name
+        ctx.font='500 12px Roboto, sans-serif';
+        const cidrText = `(${s.cidr})`;
+        const cidrW = ctx.measureText(cidrText).width;
+        const lineH = 14;
+        const boxW = padX*2 + nameW + gap + cidrW;
+        const boxH = padY*2 + lineH;
+        // Position the box above the subnet's top-left corner
+        const bx = tl.x + 6; // slight inset from left edge
+        const by = tl.y - 8 - boxH; // above with small gap
+        ctx.beginPath(); (ctx as any).roundRect?.(bx, by, boxW, boxH, 5);
+        ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fill();
+        ctx.strokeStyle = strokeStyle; ctx.lineWidth=1; ctx.stroke();
+        // Draw text segments
+        let tx = bx + padX; const ty = by + padY + lineH/2;
+        if (hasName){ ctx.font='600 13px Roboto, sans-serif'; ctx.fillStyle='#fff'; ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.fillText(nameLabel, tx, ty); tx += nameW + gap; }
+        ctx.font='500 12px Roboto, sans-serif'; ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.fillText(cidrText, tx, ty);
+        ctx.restore();
       }
       ctx.restore();
     }
@@ -390,8 +422,30 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   if (!n.allowed) drawWifiOffBadge(hostBadgeX, hostBadgeY, z);
   if (problematicPeers.has(n.id)) drawExclamationBadge(hostBadgeX, hostBadgeY - (n.allowed?0: (14*z)), z); // offset if stacked
         const labelY = topY + totalH/2 + 10*z;
-        ctx.save(); ctx.fillStyle='rgba(255,255,255,0.92)'; ctx.font='600 12px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText(n.name, S.x, labelY); ctx.restore();
-        if (ui?.hoverPeerId === n.id){ ctx.save(); ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.font='500 11px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText((n as any).ip || '(no ip)', S.x, labelY + 14); ctx.restore(); }
+        const isHoverPeer = ui?.hoverPeerId === n.id;
+        if (!isHoverPeer){
+          // Non-hover: show simple name under host
+          ctx.save(); ctx.fillStyle='rgba(255,255,255,0.92)'; ctx.font='600 12px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText(n.name, S.x, labelY); ctx.restore();
+        } else {
+          // Hover: show dark rounded label with name and IP
+          const nameText = n.name || '';
+          const ipText = (n as any).ip || '(no ip)';
+          const padX = 8, padY = 6, lineH = 14;
+          ctx.save();
+          // Measure max width across both lines
+          ctx.font='600 12px Roboto, sans-serif'; const nameW = ctx.measureText(nameText).width;
+          ctx.font='500 12px Roboto, sans-serif'; const ipW = ctx.measureText(ipText).width;
+          const maxW = Math.max(nameW, ipW);
+          const boxW = maxW + padX*2; const boxH = lineH*2 + padY*2 + 2; // +2 interline spacing
+          const bx = S.x - boxW/2; const by = topY - 10*z - boxH; // above the host icon
+          ctx.beginPath(); (ctx as any).roundRect?.(bx, by, boxW, boxH, 5);
+          ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fill(); ctx.strokeStyle=stroke; ctx.lineWidth=1; ctx.stroke();
+          // Text lines
+          ctx.textAlign='left'; ctx.textBaseline='middle';
+          ctx.font='600 12px Roboto, sans-serif'; ctx.fillStyle='#fff'; ctx.fillText(nameText, bx + padX, by + padY + lineH/2);
+          ctx.font='500 12px Roboto, sans-serif'; ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fillText(ipText, bx + padX, by + padY + lineH + 2 + lineH/2);
+          ctx.restore();
+        }
       } else {
         // Original monitor client icon
         const monitorW = 46 * z;
@@ -424,8 +478,29 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   const clientBadgeY = S.y; // center vertically around S.y
   if (!n.allowed) drawWifiOffBadge(clientBadgeX, clientBadgeY, z);
   if (problematicPeers.has(n.id)) drawExclamationBadge(clientBadgeX, clientBadgeY - (n.allowed?0: (14*z)), z);
-        ctx.save(); ctx.fillStyle='rgba(255,255,255,0.92)'; ctx.font='600 12px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText(n.name, S.x, labelY); ctx.restore();
-        if (ui?.hoverPeerId === n.id) { ctx.save(); ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.font='500 11px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText((n as any).ip || '(no ip)', S.x, labelY + 14); ctx.restore(); }
+        const isHoverClient = ui?.hoverPeerId === n.id;
+        if (!isHoverClient){
+          // Non-hover: show simple name under client
+          ctx.save(); ctx.fillStyle='rgba(255,255,255,0.92)'; ctx.font='600 12px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.fillText(n.name, S.x, labelY); ctx.restore();
+        } else {
+          // Hover: show dark rounded label with name and IP
+          const nameText = n.name || '';
+          const ipText = (n as any).ip || '(no ip)';
+          const padX = 8, padY = 6, lineH = 14;
+          ctx.save();
+          // Measure widths
+          ctx.font='600 12px Roboto, sans-serif'; const nameW = ctx.measureText(nameText).width;
+          ctx.font='500 12px Roboto, sans-serif'; const ipW = ctx.measureText(ipText).width;
+          const maxW = Math.max(nameW, ipW);
+          const boxW = maxW + padX*2; const boxH = lineH*2 + padY*2 + 2;
+          const bx = S.x - boxW/2; const by = y0 - 10*z - boxH; // above monitor
+          ctx.beginPath(); (ctx as any).roundRect?.(bx, by, boxW, boxH, 5);
+          ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fill(); ctx.strokeStyle=stroke; ctx.lineWidth=1; ctx.stroke();
+          ctx.textAlign='left'; ctx.textBaseline='middle';
+          ctx.font='600 12px Roboto, sans-serif'; ctx.fillStyle='#fff'; ctx.fillText(nameText, bx + padX, by + padY + lineH/2);
+          ctx.font='500 12px Roboto, sans-serif'; ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fillText(ipText, bx + padX, by + padY + lineH + 2 + lineH/2);
+          ctx.restore();
+        }
       }
     }
   }
@@ -435,7 +510,15 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
     if (!ui?.selection) return; const sel = ui.selection;
     ctx.save(); ctx.strokeStyle='#FFFFFF'; ctx.setLineDash([4,4]); ctx.lineWidth=2;
     if (sel.type==='peer') { const n = peers.find(p=>p.id===sel.id); if (!n){ ctx.restore(); return;} const S=toScreen(n.x,n.y); ctx.beginPath(); ctx.arc(S.x,S.y,30*panzoom.zoom,0,Math.PI*2); ctx.stroke(); }
-    else if (sel.type==='subnet') { const s=subnets.find(ss=>ss.id===sel.id); if (!s){ ctx.restore(); return;} const tl=toScreen(s.x - s.width/2, s.y - s.height/2); const w=s.width*panzoom.zoom, h=s.height*panzoom.zoom; ctx.beginPath(); ctx.rect(tl.x-4, tl.y-4, w+8, h+8); ctx.stroke(); }
+    else if (sel.type==='subnet') {
+      const s=subnets.find(ss=>ss.id===sel.id); if (!s){ ctx.restore(); return;}
+      const tl=toScreen(s.x - s.width/2, s.y - s.height/2); const w=s.width*panzoom.zoom, h=s.height*panzoom.zoom;
+      const pad = 4; const x = tl.x - pad, y = tl.y - pad, sw = w + pad*2, sh = h + pad*2;
+      const innerR = 8; // inner subnet corner radius in px
+      const rSel = innerR + pad; // bump radius so outline matches inner curvature visually
+      ctx.beginPath(); if ((ctx as any).roundRect) (ctx as any).roundRect(x, y, sw, sh, rSel); else ctx.rect(x, y, sw, sh);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 

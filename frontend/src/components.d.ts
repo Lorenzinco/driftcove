@@ -15,6 +15,7 @@ declare module 'vue' {
     CanvasStage: typeof import('./components/canvas/CanvasStage.vue')['default']
     ConfirmCutLinkDialog: typeof import('./components/canvas/overlays/ConfirmCutLinkDialog.vue')['default']
     ConfirmDeletePeerDialog: typeof import('./components/canvas/overlays/ConfirmDeletePeerDialog.vue')['default']
+    ConfirmDeleteSubnetDialog: typeof import('./components/canvas/overlays/ConfirmDeleteSubnetDialog.vue')['default']
     CutLinkDialog: typeof import('./components/canvas/overlays/CutLinkDialog.vue')['default']
     HelloWorld: typeof import('./components/HelloWorld.vue')['default']
     LinkTypeDialog: typeof import('./components/canvas/overlays/LinkTypeDialog.vue')['default']

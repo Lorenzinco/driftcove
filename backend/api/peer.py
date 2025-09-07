@@ -59,9 +59,9 @@ def create_peer(username:str , subnet:str, _: Annotated[str, Depends(verify_toke
     return {"configuration": configuration}
 
 @router.get("/config",tags=["peer"])
-def get_peer_config(username: str, _: Annotated[str, Depends(verify_token)]):
+def regenerate_config(username: str, _: Annotated[str, Depends(verify_token)]):
     """
-    Get the WireGuard configuration for a specific peer.
+    Creates a new configuration for the given peer, the old one will be destroyed.
     This endpoint will return the WireGuard configuration file for the peer identified by the provided username.
     """
     try:
@@ -69,7 +69,20 @@ def get_peer_config(username: str, _: Annotated[str, Depends(verify_token)]):
             peer = db.get_peer_by_username(username)
             if peer is None:
                 raise HTTPException(status_code=404, detail="Peer not found")
-            configuration = generate_wg_config(peer)
+            
+            # generate another keypair
+            keys = generate_keys()  
+
+            # remove from the wireguard configuration the current public key
+            remove_from_wg_config(peer)
+
+            # apply the new configuration with the new public key
+            peer.public_key = keys["public_key"]
+            peer.preshared_key = keys["preshared_key"]
+            db.update_peer(peer)
+            apply_to_wg_config(peer)
+
+            configuration = generate_wg_config(peer, ["private_key"])
         return {"configuration": configuration}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Config generation failed: {e}")

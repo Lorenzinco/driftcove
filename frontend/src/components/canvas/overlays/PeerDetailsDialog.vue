@@ -187,7 +187,7 @@
       <v-divider/>
       <v-card-actions>
         <v-spacer />
-  <v-btn variant="text" prepend-icon="mdi-download" :loading="dlLoading" @click="downloadConfig">Download Config</v-btn>
+  <v-btn variant="text" prepend-icon="mdi-download" :loading="dlLoading" @click="recreateConfig">Recreate Config</v-btn>
   <v-btn color="primary" variant="elevated" @click="close()">Close</v-btn>
       </v-card-actions>
     </v-card>
@@ -231,8 +231,9 @@ const subnetDisplay = computed(()=>{
 });
 const peer2SubnetLinks = computed(() => {
   const p = peer.value;
+  const ownSubnetId = p?.subnetId;
   if (!p) return [];
-  return store.links.filter(l => (l.toId === p.id || l.fromId === p.id)&& l.kind === 'membership');
+  return store.links.filter(l => ((l.toId === p.id && l.fromId !== ownSubnetId) || (l.fromId === p.id && l.toId !== ownSubnetId)) && l.kind === 'membership');
 });
 const p2pLinks = computed(() => {
   const p = peer.value;
@@ -298,7 +299,7 @@ function openAddService(peerId:string){
   addServiceDialogRef.value?.show(peerId)
 }
 
-async function downloadConfig(){
+async function recreateConfig(){
   if (!peer.value) return;
   dlLoading.value = true;
   try {

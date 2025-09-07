@@ -45,10 +45,57 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 		topology: null as { peers: any[]; subnets: any[]; links: any[] } | null,
 		lastFetchedAt: 0,
 		pollingId: null as number | null,
-		pollingIntervalMs: 1000,
+		pollingIntervalMs: 5000,
+		coordPushId: null as number | null,
+		coordPushIntervalMs: 10000,
+		pushing: false,
+		hasFetchedOnce: false,
+		lastSentCoordsSig: null as string | null,
 		subnetDetails: {} as Record<string, { name: string; description?: string; fetchedAt: number }>,
 	}),
 	actions: {
+		// Build a stable signature of current coordinates/sizes/colors to detect changes
+		buildCoordinateSignature(): string {
+			const net = useNetworkStore()
+			const subnets = (net.subnets || []).map(s => ({ id: s.id, x: s.x, y: s.y, w: s.width, h: s.height, c: (s as any).rgba }))
+			const peers = (net.peers || []).map(p => ({ id: p.id, x: p.x, y: p.y }))
+			// Sort for deterministic order
+			subnets.sort((a,b)=> (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+			peers.sort((a,b)=> (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+			return JSON.stringify({ S: subnets, P: peers })
+		},
+
+		// Push current coordinates/sizes/colors to backend using the update endpoint (non-destructive)
+		async pushCoordinatesOnce(){
+			// Don't push until we've fetched real data at least once to avoid sending mock/seed state
+			if (this.pushing || !this.hasFetchedOnce) return
+			// Skip if no coordinate changes since last push
+			const sig = this.buildCoordinateSignature()
+			if (this.lastSentCoordsSig && sig === this.lastSentCoordsSig) return
+			this.pushing = true
+			try {
+				const payload = this.buildCurrentTopologyPayload()
+				await getClient().post('/api/network/update_coordinates', payload)
+				this.lastSentCoordsSig = sig
+			} catch (e:any) {
+				// Keep quiet but track lastError for visibility
+				this.lastError = e?.message || 'Failed to push coordinates'
+			} finally {
+				this.pushing = false
+			}
+		},
+
+		startCoordinatePushing(intervalMs = 1000){
+			if (this.coordPushId) return
+			this.coordPushIntervalMs = intervalMs
+			// Immediate push will happen only if hasFetchedOnce is true
+			this.pushCoordinatesOnce()
+			this.coordPushId = window.setInterval(()=> this.pushCoordinatesOnce(), intervalMs)
+		},
+
+		stopCoordinatePushing(){
+			if (this.coordPushId){ clearInterval(this.coordPushId); this.coordPushId = null }
+		},
 		// Fetch and adapt new normalized topology structure from backend
 		async fetchTopology(force = false) {
 			if (this.loading) return
@@ -187,6 +234,11 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 				// Notify canvas to force an immediate redraw (initial real data)
 				window.dispatchEvent(new CustomEvent('topology-updated'))
 				this.lastFetchedAt = Date.now()
+				// Mark that we have fetched real data at least once and kick off coord pushing if not running
+				if (!this.hasFetchedOnce) {
+					this.hasFetchedOnce = true
+					if (!this.coordPushId) this.startCoordinatePushing(this.pollingIntervalMs)
+				}
 			} catch (e:any) {
 				this.lastError = e?.message || 'Failed to fetch topology'
 			} finally { this.loading = false }
@@ -361,6 +413,14 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 		async fetchPeerConfig(username: string){
 			try { this.lastError=null; const { data } = await getClient().get<{configuration:string}>('/api/peer/config', { params:{ username } }); return data.configuration } catch(e:any){ this.lastError = e?.message || 'Failed to fetch config'; return null }
 		},
+		// Delete subnet only (keep peers; memberships and links removed server-side)
+		async deleteSubnet(subnetCidr: string){
+			try { this.lastError=null; await getClient().delete('/api/subnet/delete', { params:{ subnet: subnetCidr } }); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to delete subnet'; return false }
+		},
+		// Delete subnet and all peers inside
+		async deleteSubnetWithPeers(subnetCidr: string){
+			try { this.lastError=null; await getClient().delete('/api/subnet/delete/with_peers', { params:{ subnet: subnetCidr } }); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to delete subnet with peers'; return false }
+		},
 		// Delete a peer by username
 		async deletePeer(username: string){
 			try {
@@ -396,11 +456,14 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 		startTopologyPolling(intervalMs = 1000){
 			if (this.pollingId) return
 			this.pollingIntervalMs = intervalMs
+			// On first successful fetch, we'll start coordinate pushing
 			this.fetchTopology(true)
 			this.pollingId = window.setInterval(()=> this.fetchTopology(true), intervalMs)
 		},
 		stopTopologyPolling(){
 			if (this.pollingId){ clearInterval(this.pollingId); this.pollingId = null }
+			// Optionally stop coordinate pushing when polling stops
+			this.stopCoordinatePushing()
 		},
 		async fetchSubnet(_subnetId: string) {
 			// Endpoint not yet adapted to new raw structure; placeholder for future expansion

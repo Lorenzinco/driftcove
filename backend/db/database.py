@@ -77,7 +77,37 @@ class Database:
             """, (peer.public_key,))
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while removing peer: {e}")
+        
+    def update_peer(self,peer:Peer):
+        """
+        Updates a peer inside the database.
+        The function returns nothing, but will raise an error if the database operation fails.
+        """
+        try:
+            self.conn.execute("""
+                UPDATE peers
+                SET username = ?, public_key = ?, preshared_key = ?, address = ?, x = ?, y = ?
+                WHERE public_key = ?
+            """, (peer.username, peer.public_key, peer.preshared_key, peer.address, peer.x, peer.y, peer.public_key))
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while updating peer: {e}")
+        
+        return
     
+    def update_peer_coordinates(self,peer:Peer):
+        """
+        Updates a peer's coordinates inside the database.
+        The function returns nothing, but will raise an error if the database operation fails.
+        """
+        try:
+            self.conn.execute("""
+                UPDATE peers
+                SET x = ?, y = ?
+                WHERE public_key = ?
+            """, (peer.x, peer.y, peer.public_key))
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while updating peer coordinates: {e}")
+
     def get_all_peers(self) -> list[Peer]:
         """
         Returns a list of all peers in the database.
@@ -188,6 +218,21 @@ class Database:
             """, (subnet.subnet,))
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while deleting subnet: {e}")
+        return
+    
+    def update_subnet_coordinates_size_and_color(self,subnet:Subnet):
+        """
+        This function updates a subnet's coordinates, size and color inside the database.
+        The function returns nothing, but will raise an error if the database operation fails.
+        """
+        try:
+            self.conn.execute("""
+                UPDATE subnets
+                SET x = ?, y = ?, width = ?, height = ?, rgba = ?
+                WHERE subnet = ?
+            """, (subnet.x, subnet.y, subnet.width, subnet.height, subnet.rgba, subnet.subnet))
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while updating subnet coordinates, size and color: {e}")
         return
     
     def get_peer_by_username(self, username: str) -> Peer:

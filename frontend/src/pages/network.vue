@@ -108,7 +108,7 @@
         addSubnetDialog.value?.showAt(worldX, worldY);
     }
     onMounted(()=> { 
-        backend.startTopologyPolling(1000); 
+        backend.startTopologyPolling(2500); 
         window.addEventListener('add-subnet-dialog-closed', handleSubnetDialogClosed); 
         window.addEventListener('request-link-type', handleRequestLinkType);
         window.addEventListener('request-cut-link', handleRequestCutLink);

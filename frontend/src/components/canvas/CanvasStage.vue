@@ -264,6 +264,34 @@ function onMouseMove(e:MouseEvent){
           const ptp = parent.y - parent.height/2 + margin; const pb = parent.y + parent.height/2 - margin;
           if (left < pl) left = pl; if (right > pr) right = pr; if (top < ptp) top = ptp; if (bottom > pb) bottom = pb;
         }
+        // Prevent shrinking parent past its children: keep all contained subnets fully inside with margin
+        {
+          const children = store.subnets.filter(cs=> cs.id!==s.id && s.cidr && cs.cidr && cidrContains(s.cidr, cs.cidr));
+          if (children.length){
+            const margin = 20;
+            let minChildLeft = Infinity, maxChildRight = -Infinity, minChildTop = Infinity, maxChildBottom = -Infinity;
+            for (const c of children){
+              const cl = c.x - c.width/2; const cr = c.x + c.width/2; const ct = c.y - c.height/2; const cb = c.y + c.height/2;
+              if (cl < minChildLeft) minChildLeft = cl;
+              if (cr > maxChildRight) maxChildRight = cr;
+              if (ct < minChildTop) minChildTop = ct;
+              if (cb > maxChildBottom) maxChildBottom = cb;
+            }
+            // Allowed bounds for parent edges given children box + margin
+            const minAllowedLeft = minChildLeft - margin;
+            const maxAllowedRight = maxChildRight + margin;
+            const minAllowedTop = minChildTop - margin;
+            const minAllowedBottom = maxChildBottom + margin; // bottom must be at least this
+            if (interactions.resizeDrag.edge.includes('w') && left > minAllowedLeft) left = minAllowedLeft;
+            if (interactions.resizeDrag.edge.includes('e') && right < maxAllowedRight) right = maxAllowedRight;
+            if (interactions.resizeDrag.edge.includes('n') && top > minAllowedTop) top = minAllowedTop;
+            if (interactions.resizeDrag.edge.includes('s') && bottom < minAllowedBottom) bottom = minAllowedBottom;
+            // If resizing diagonally (e.g., 'nw','ne','sw','se'), multiple clamps above will apply together
+            // Also ensure we still respect minimum sizes after clamping to children
+            if (right - left < minW){ if (interactions.resizeDrag.edge.includes('w')) left = right - minW; else right = left + minW; }
+            if (bottom - top < minH){ if (interactions.resizeDrag.edge.includes('n')) top = bottom - minH; else bottom = top + minH; }
+          }
+        }
     s.width = right - left; s.height = bottom - top; s.x = left + s.width/2; s.y = top + s.height/2;
     // Clamp peers now inside new bounds (remove any that fall out)
     const margin = 26;
@@ -336,7 +364,7 @@ function onMouseMove(e:MouseEvent){
   // Update tool indicator
   indicator.x = e.clientX; indicator.y = e.clientY;
   if (store.tool==='connect') {
-    indicator.visible = true; indicator.label = ui.connect.active ? 'Select target peer' : 'Pick first peer';
+    indicator.visible = true; indicator.label = ui.connect.active ? 'Select target peer or subnet' : 'Pick first peer or subnet';
     indicator.icon = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="3"/><circle cx="19" cy="12" r="3"/><line x1="8" y1="12" x2="16" y2="12"/></svg>';
   } else if (store.tool==='cut') {
     indicator.visible = true; indicator.label = 'Cut links';

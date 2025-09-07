@@ -213,6 +213,7 @@ def create_link_between_two_subnets(subnet_a: str, subnet_b: str, _: Annotated[s
                 raise HTTPException(status_code=404, detail=f"Subnet {subnet_b} does not exist")
             db.add_link_between_subnets(subnet_a_obj, subnet_b_obj)
             allow_link(subnet_a_obj.subnet, subnet_b_obj.subnet)
+            allow_link(subnet_b_obj.subnet, subnet_a_obj.subnet)
     except HTTPException as e:
         raise HTTPException(status_code=400, detail=f"Invalid subnet data: {e}")
     except Exception as e:
@@ -234,8 +235,37 @@ def delete_link_between_two_subnets(subnet_a: str, subnet_b: str, _: Annotated[s
                 raise HTTPException(status_code=404, detail=f"Subnet {subnet_b} does not exist")
             db.remove_link_between_subnets(subnet_a_obj, subnet_b_obj)
             remove_link(subnet_a_obj.subnet, subnet_b_obj.subnet)
+            remove_link(subnet_b_obj.subnet, subnet_a_obj.subnet)
     except HTTPException as e:
         raise HTTPException(status_code=400, detail=f"Invalid subnet data: {e}")
     except Exception as e:
         raise HTTPException(status_code=501, detail=f"Link deletion failed: {e}")
     return {"message": f"Link between {subnet_a} and {subnet_b} deleted successfully"}
+
+@router.post("/update_coordinates",tags=["network","peers","subnets"])
+def update_coordinates(topology: Topology, _: Annotated[str, Depends(verify_token)]):
+    """
+    Update the coordinates of a subnet.
+    """
+    try:
+        with lock.write_lock(), state_manager.saved_state():
+            for subnet in topology.subnets.values():
+                subnet_in_db = db.get_subnet_by_address(subnet.subnet)
+                if subnet_in_db is None:
+                    raise HTTPException(status_code=404, detail=f"Subnet {subnet.subnet} does not exist")
+                subnet_in_db.x = subnet.x
+                subnet_in_db.y = subnet.y
+                subnet_in_db.width = subnet.width
+                subnet_in_db.height = subnet.height
+                subnet_in_db.rgba = subnet.rgba
+                db.update_subnet_coordinates_size_and_color(subnet_in_db)
+            
+            for peer in topology.peers.values():
+                peer_in_db = db.get_peer_by_address(peer.address)
+                if peer_in_db is None:
+                    raise HTTPException(status_code=404, detail=f"Peer {peer.username} does not exist")
+                peer_in_db.x = peer.x
+                peer_in_db.y = peer.y
+                db.update_peer_coordinates(peer_in_db)
+    except HTTPException as e:
+        raise HTTPException(status_code=400, detail=f"Cannot update coordinates: {e}")

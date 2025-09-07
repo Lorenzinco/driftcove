@@ -10,6 +10,12 @@
         <v-list density="compact" nav class="py-1" style="min-width:230px;">
           <v-list-subheader class="text-overline opacity-70">Subnet Actions</v-list-subheader>
           <v-list-item
+            value="info"
+            prepend-icon="mdi-information-outline"
+            title="Subnet Info"
+            @click="$emit('info')"
+          />
+          <v-list-item
             value="create-subnet"
             prepend-icon="mdi-access-point-network"
             title="Create Subnet here"
@@ -28,12 +34,13 @@
             @click="$emit('connect')"
           />
           <v-divider class="my-1" />
-            <v-list-item
-              value="info"
-              prepend-icon="mdi-information-outline"
-              title="Subnet Info"
-              @click="$emit('info')"
-            />
+          <v-list-item
+            value="delete"
+            prepend-icon="mdi-delete-outline"
+            title="Delete Subnet"
+            class="text-error"
+            @click="$emit('delete')"
+          />
         </v-list>
       </v-card>
     </div>
@@ -42,7 +49,7 @@
 
 <script setup lang="ts">
 defineProps<{ open: boolean; x: number; y: number }>();
-defineEmits<{ (e:'create-peer'): void; (e:'info'): void; (e:'create-subnet'): void; (e:'connect'): void }>();
+defineEmits<{ (e:'create-peer'): void; (e:'info'): void; (e:'create-subnet'): void; (e:'connect'): void; (e:'delete'): void }>();
 </script>
 
 <style scoped>
