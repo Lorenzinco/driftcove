@@ -415,11 +415,11 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 		},
 		// Delete subnet only (keep peers; memberships and links removed server-side)
 		async deleteSubnet(subnetCidr: string){
-			try { this.lastError=null; await getClient().delete('/api/subnet/delete', { params:{ subnet: subnetCidr } }); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to delete subnet'; return false }
+			try { this.lastError=null; await getClient().delete('/api/subnet/', { params:{ subnet: subnetCidr } }); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to delete subnet'; return false }
 		},
 		// Delete subnet and all peers inside
 		async deleteSubnetWithPeers(subnetCidr: string){
-			try { this.lastError=null; await getClient().delete('/api/subnet/delete/with_peers', { params:{ subnet: subnetCidr } }); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to delete subnet with peers'; return false }
+			try { this.lastError=null; await getClient().delete('/api/subnet/with_peers', { params:{ subnet: subnetCidr } }); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to delete subnet with peers'; return false }
 		},
 		// Delete a peer by username
 		async deletePeer(username: string){
