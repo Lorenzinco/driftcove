@@ -2,12 +2,17 @@ services:
   driftcove:
     build: .
     environment:
-      - wg_udp_port=1194
-      - wg_backend_tcp_port=8000
-      - api_token=supersecuretoken
-      - endpoint=127.0.0.0
-      - wg_default_subnet=10.128.0.0/9
-      - mtu=1420
+      - WG_IF=wg0
+      - WG_UDP_PORT=1194
+      - WG_ADDRESS_CIDR=10.128.0.1/24
+      - WG_DEFAULT_SUBNET=10.128.0.0/9
+      - WAN_IF=eth0
+      - WG_BACKEND_TCP_PORT=8000
+
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.rp_filter: "0"
+      net.ipv4.conf.default.rp_filter: "0"
     container_name: driftcove
     cap_add:
       - NET_ADMIN

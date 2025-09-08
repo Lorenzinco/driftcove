@@ -102,6 +102,8 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 			this.loading = true; this.lastError = null
 			try {
 				const { data } = await getClient().get<any>('/api/network/topology')
+				const rules = await this.getNftTableRules()
+				console.log(rules)
 				const topo = data.topology || {}
 				const subnetsDict = topo.subnets || {}
 				const peersDict = topo.peers || {}
@@ -469,6 +471,9 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 			// Endpoint not yet adapted to new raw structure; placeholder for future expansion
 		},
 		clearError() { this.lastError = null },
+		async getNftTableRules(){
+			try { this.lastError=null; const { data } = await getClient().get<{ nft_rules: string[] }>('/api/network/nft_rules'); return data.nft_rules || [] } catch(e:any){ this.lastError = e?.message || 'Failed to fetch nftables rules'; return [] }
+		}
 	},
 	getters: {
 		peers: (s) => s.topology?.peers || [],

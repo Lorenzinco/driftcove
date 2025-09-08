@@ -687,7 +687,6 @@ class Database:
                 JOIN peers p2 ON pp.peer_two_id = p2.id
             """)
             links_rows = cur.fetchall()
-            logging.info(f"Links rows: {links_rows}")
             for row in links_rows:
                 peer1 = Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5])
                 peer2 = Peer(username=row[6], public_key=row[7], preshared_key=row[8], address=row[9], x=row[10], y=row[11])

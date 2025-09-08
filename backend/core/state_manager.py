@@ -2,19 +2,19 @@ from contextlib import contextmanager
 from backend.core.logger import logging
 from backend.core.config import settings
 from backend.core.database import db
+from backend.core.nftables import restore_dcv_table, backup_dcv_table
 import subprocess
 
 class StateManager:
     def __init__(self, wg_interface: str):
         self.wg_interface = wg_interface
-        self.iptables_backup_text: str | None = None
+        self.dcv_backup_text: str | None = None
         self.wg_config_backup_text: str | None = None
 
     def backup(self):
 
-        # backup iptables
-        result = subprocess.run(["iptables-save"], check=True, stdout=subprocess.PIPE, text=True)
-        self.iptables_backup_text = result.stdout
+        # backup nftables dcv table
+        self.dcv_backup_text = backup_dcv_table()
 
         # backup WireGuard config
         result = subprocess.run(["wg", "showconf", self.wg_interface], check=True, stdout=subprocess.PIPE, text=True)
@@ -25,12 +25,12 @@ class StateManager:
 
     def restore(self):
         """
-        Restores iptables and WireGuard config from in-memory backup.
+        Restores nftables dcv table and WireGuard config from in-memory backup.
         """
 
         try:
-            if self.iptables_backup_text:
-                subprocess.run(["iptables-restore"], input=self.iptables_backup_text, text=True, check=True)
+            if self.dcv_backup_text:
+                restore_dcv_table(self.dcv_backup_text)
 
             if self.wg_config_backup_text:
                 subprocess.run(["wg", "setconf", self.wg_interface, "/dev/stdin"],

@@ -4,7 +4,7 @@ from backend.core.config import verify_token, settings
 from backend.core.lock import lock
 from backend.core.state_manager import state_manager
 from backend.core.database import db
-from backend.core.iptables import remove_link_with_port, allow_link_with_port, allow_answer_link, remove_answers_link
+from backend.core.nftables import grant_service, revoke_service, grant_subnet_service, revoke_subnet_service
 from backend.core.models import Service
 from backend.core.logger import logging
 from typing import Annotated
@@ -19,7 +19,6 @@ def create_service(service_name:str, department:str, username:str, port:int, _: 
     If you wish for selected peers to be able to connect to the service, you need to use the connect endpoint.
     If a peer is connected to a peer with the same address, it will automatically be able to connect to the service.
     """
-    keys = generate_keys()
     with lock.write_lock(), state_manager.saved_state():
         old_service = db.get_service_by_name(service_name)
         # database consistency
@@ -63,7 +62,7 @@ def delete_service(service_name: str, _: Annotated[str, Depends(verify_token)]):
             # Remove the service from the allowed IPs of the peers
             for peer in peers_linked:
                 logging.info(f"Removing service {service.name} from peer {peer.username}")
-                remove_link_with_port(peer.address, service.address)
+                revoke_service(peer.address, service.address, service.port)
             logging.info(f"Removing service {service.name} from the database")
             db.delete_service(service)
 
@@ -94,9 +93,7 @@ def service_connect(username: str, service_name: str, _: Annotated[str, Depends(
             
             db.add_peer_service_link(peer, service)
             logging.info(f"Connecting peer {peer.username} to service {service.name}")
-            allow_link_with_port(peer.address, host.address, service.port)
-            allow_answer_link(host.address, peer.address)
-
+            grant_service(peer.address, host.address, service.port)
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Connecting peer {username} to {service_name} failed: {e}")
@@ -128,8 +125,7 @@ def service_disconnect(username: str, service_name: str, _: Annotated[str, Depen
                 raise HTTPException(status_code=400, detail=f"Peer {username} is not connected to service {service_name}")
             
             logging.info(f"Disconnecting peer {peer.username} from service {service.name}")
-            remove_link_with_port(peer.address, host.address, service.port)
-            remove_answers_link(host.address, peer.address)
+            revoke_service(peer.address, host.address, service.port)
             db.remove_peer_service_link(peer, service)
     
         except Exception as e:
@@ -156,8 +152,7 @@ def connect_subnet_to_service(subnet_address:str, service_name: str, _: Annotate
                 raise HTTPException(status_code=404, detail="Service host not found")
             
             db.add_link_from_subnet_to_service(subnet, service)
-            allow_link_with_port(subnet.subnet, host.address, service.port)
-            allow_answer_link(host.address, subnet.subnet)
+            grant_subnet_service(subnet.subnet, host.address, service.port)
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to connect subnet {subnet_address} to service {service_name}: {e}")
@@ -183,8 +178,7 @@ def disconnect_subnet_from_service(subnet_address:str, service_name: str, _: Ann
                 raise HTTPException(status_code=404, detail="Service host not found")
             
             db.remove_link_from_subnet_to_service(subnet, service)
-            remove_link_with_port(subnet.subnet, host.address, service.port)
-            remove_answers_link(host.address, subnet.subnet)
+            revoke_subnet_service(subnet.subnet, host.address, service.port)
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to disconnect subnet {subnet_address} from service {service_name}: {e}")

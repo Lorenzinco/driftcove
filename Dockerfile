@@ -3,7 +3,7 @@ FROM ubuntu:latest
 ENV PYTHONUNBUFFERED=1
 
 RUN apt update &&\
-    apt install -y wireguard iproute2 iptables python3-pip &&\
+    apt install -y wireguard iproute2 nftables python3-pip &&\
     mkdir -p /etc/wireguard 
 
 COPY backend/requirements.txt /home/requirements.txt
