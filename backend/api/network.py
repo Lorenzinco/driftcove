@@ -267,5 +267,5 @@ def update_coordinates(topology: Topology, _: Annotated[str, Depends(verify_toke
                 peer_in_db.x = peer.x
                 peer_in_db.y = peer.y
                 db.update_peer_coordinates(peer_in_db)
-    except HTTPException as e:
+    except Exception as e:
         raise HTTPException(status_code=400, detail=f"Cannot update coordinates: {e}")

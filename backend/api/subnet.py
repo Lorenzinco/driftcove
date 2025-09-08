@@ -29,7 +29,8 @@ def create_subnet(subnet: Subnet, _: Annotated[str, Depends(verify_token)]):
 
 @router.post("/connect",tags=["subnet"])
 def connect_peer_to_subnet(username: str, subnet: str, _: Annotated[str, Depends(verify_token)]):
-    """ Connects a peer named username to a specific subnet if both exist.
+    """ 
+    Makes a peer public inside a specific subnet. A peer being public means that other peers inside the subnet can connect to it and he can connect to other public peers inside that subnet.
     """
     with lock.write_lock(), state_manager.saved_state():
         try:
