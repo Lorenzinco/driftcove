@@ -337,7 +337,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       }
     })();
 
-    function drawWifiOffBadge(x:number,y:number,z:number){
+  function drawWifiOffBadge(x:number,y:number,z:number){
       const r = 8 * z; // outer badge radius
       ctx.save();
       // Badge background
@@ -363,6 +363,21 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       ctx.beginPath(); ctx.strokeStyle='#cfcfcf'; ctx.lineWidth=1*z; ctx.moveTo(x - r*0.62, y + r*0.58); ctx.lineTo(x + r*0.62, y - r*0.58); ctx.stroke();
       ctx.restore();
     }
+    function drawGlobeBadge(x:number,y:number,z:number){
+      const r = 7 * z;
+      ctx.save();
+      // Outer circle
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2);
+      ctx.fillStyle = '#2b2b2b'; ctx.fill();
+      ctx.strokeStyle = '#9ad0ff'; ctx.lineWidth = 1.1*z; ctx.stroke();
+      // Longitudes (vertical meridians)
+      ctx.strokeStyle = '#cfe8ff'; ctx.lineWidth = 1*z; ctx.beginPath(); ctx.moveTo(x, y - r + 2*z); ctx.lineTo(x, y + r - 2*z); ctx.stroke();
+      // Latitudes (parallels) as arcs
+      for (const k of [-0.5, 0.5]){
+        ctx.beginPath(); ctx.ellipse(x, y + k*r*0.4, r*0.78, r*0.28, 0, 0, Math.PI*2); ctx.stroke();
+      }
+      ctx.restore();
+    }
     function drawExclamationBadge(x:number,y:number,z:number){
       const badgeR = 7 * z;
       ctx.save(); ctx.beginPath(); ctx.arc(x, y, badgeR, 0, Math.PI*2);
@@ -379,9 +394,11 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
     const peerColor = theme?.colors.peer || '#7AD7F0';
     for (const n of peers){
       const S = toScreen(n.x, n.y);
-  const isHost = n.services && Object.keys(n.services).length>0; // Host = has at least one service
-      const stroke = n.allowed?peerColor:'#888';
-      const fill = n.allowed?'rgba(85, 148, 165, 1)':'rgba(90, 90, 90, 1)';
+      const isHost = n.services && Object.keys(n.services).length>0; // Host = has at least one service
+      const last = (n as any).lastHandshake || 0; const nowSec = Date.now()/1000; const connected = (nowSec - last) < 300; // 5 minutes
+      const isPublic = !!((n as any).public); // membership to its own subnet
+      const stroke = connected ? peerColor : '#888';
+      const fill = connected ? 'rgba(85, 148, 165, 1)' : 'rgba(90, 90, 90, 1)';
       const z = panzoom.zoom;
   if (isHost) {
         // Server icon (stacked chassis)
@@ -419,8 +436,9 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   // Connection + problematic badges
   const hostBadgeX = S.x + rackW/2 + 4*z;
   const hostBadgeY = S.y + 24*z;
-  if (!n.allowed) drawWifiOffBadge(hostBadgeX, hostBadgeY, z);
-  if (problematicPeers.has(n.id)) drawExclamationBadge(hostBadgeX, hostBadgeY - (n.allowed?0: (14*z)), z); // offset if stacked
+  if (!connected) drawWifiOffBadge(hostBadgeX, hostBadgeY, z);
+  if (problematicPeers.has(n.id)) drawExclamationBadge(hostBadgeX, hostBadgeY - (connected?0: (14*z)), z); // offset if stacked
+  if (isPublic) drawGlobeBadge(hostBadgeX + 16*z, hostBadgeY, z);
         const labelY = topY + totalH/2 + 10*z;
         const isHoverPeer = ui?.hoverPeerId === n.id;
         if (!isHoverPeer){
@@ -476,8 +494,9 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   // Badges for client/monitor icon
   const clientBadgeX = S.x + monitorW/2 + 4*z;
   const clientBadgeY = S.y; // center vertically around S.y
-  if (!n.allowed) drawWifiOffBadge(clientBadgeX, clientBadgeY, z);
-  if (problematicPeers.has(n.id)) drawExclamationBadge(clientBadgeX, clientBadgeY - (n.allowed?0: (14*z)), z);
+  if (!connected) drawWifiOffBadge(clientBadgeX, clientBadgeY, z);
+  if (problematicPeers.has(n.id)) drawExclamationBadge(clientBadgeX, clientBadgeY - (connected?0: (14*z)), z);
+  if (isPublic) drawGlobeBadge(clientBadgeX + 16*z, clientBadgeY, z);
         const isHoverClient = ui?.hoverPeerId === n.id;
         if (!isHoverClient){
           // Non-hover: show simple name under client

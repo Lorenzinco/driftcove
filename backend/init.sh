@@ -36,7 +36,6 @@ Address    = ${WG_ADDRESS_CIDR}
 ListenPort = ${WG_UDP_PORT}
 PrivateKey = ${PRIVATE_KEY}
 MTU        = ${MTU}
-# NAT and firewall handled by nftables below (no PostUp/Down here)
 EOF
   chmod 600 "$WG_CONF"
 fi
@@ -56,42 +55,75 @@ echo "[init] Bootstrapping nftables (inet dcv + ip nat)"
 
 # Table + sets (idempotent)
 nft list table inet dcv >/dev/null 2>&1 || nft add table inet dcv
-nft 'add set inet dcv p2p_links { type ipv4_addr . ipv4_addr; flags interval; }' 2>/dev/null || true
-nft 'add set inet dcv svc_guest { type ipv4_addr . ipv4_addr . inet_service; flags interval; }' 2>/dev/null || true
-nft 'add set inet dcv admin_links { type ipv4_addr . ipv4_addr; flags interval; }' 2>/dev/null || true
+
+# Core sets
+nft 'add set inet dcv p2p_links       { type ipv4_addr . ipv4_addr; flags interval; }' 2>/dev/null || true
+nft 'add set inet dcv svc_guest       { type ipv4_addr . ipv4_addr . inet_service; flags interval; }' 2>/dev/null || true
+# Pair-only set used to accept ESTABLISHED service flows (port was checked at NEW)
+nft 'add set inet dcv svc_pairs       { type ipv4_addr . ipv4_addr; flags interval; }' 2>/dev/null || true
+nft 'add set inet dcv admin_links     { type ipv4_addr . ipv4_addr; flags interval; }' 2>/dev/null || true
 nft 'add set inet dcv admin_peer2cidr { type ipv4_addr . ipv4_addr; flags interval; }' 2>/dev/null || true
+# Panic drop set (no timeout/dynamic for container kernels)
+nft 'add set inet dcv blocked_pairs   { type ipv4_addr . ipv4_addr; flags interval; }' 2>/dev/null || true
 
 # Chains (idempotent)
+nft 'add chain inet dcv input   { type filter hook input   priority 0; policy accept; }' 2>/dev/null || true
 nft 'add chain inet dcv forward { type filter hook forward priority 0; policy accept; }' 2>/dev/null || true
-nft 'add chain inet dcv wg' 2>/dev/null || true          # regular chain (no policy!)
-nft 'add chain inet dcv wg_base' 2>/dev/null || true     # static allows
-nft 'add chain inet dcv wg_allow' 2>/dev/null || true    # dynamic allows
+nft 'add chain inet dcv wg'        2>/dev/null || true
+nft 'add chain inet dcv wg_base'   2>/dev/null || true
+nft 'add chain inet dcv wg_allow'  2>/dev/null || true
 
-# Replies fast-path (ensure once)
-nft 'insert rule inet dcv forward ct state established,related accept' 2>/dev/null || true
+# --- INPUT (to the server on wg0) ---
+nft 'flush chain inet dcv input' 2>/dev/null || true
+# Replies fast-path
+nft 'add rule inet dcv input ct state established,related accept' 2>/dev/null || true
+# Allow ping to the server tunnel IP
+nft "add rule inet dcv input iifname \"${WG_IF}\" ip daddr ${WG_ADDRESS_CIDR%%/*} icmp type echo-request accept" 2>/dev/null || true
+# (optional) SSH on wg interface:
+# nft "add rule inet dcv input iifname \"${WG_IF}\" ip daddr ${WG_ADDRESS_CIDR%%/*} tcp dport 22 accept" 2>/dev/null || true
 
-# Hook only WG traffic into wg
-nft "insert rule inet dcv forward iifname \"${WG_IF}\" goto wg" 2>/dev/null || true
-nft "insert rule inet dcv forward oifname \"${WG_IF}\" goto wg" 2>/dev/null || true
+# --- FORWARD (peer↔peer / peer↔services) ---
+nft 'flush chain inet dcv forward' 2>/dev/null || true
 
-# wg dispatch: base -> allow -> reject (ensure once)
+# 0) Immediate hard drop for blocked pairs (cuts live regardless of conntrack)
+nft 'add rule inet dcv forward ip saddr . ip daddr @blocked_pairs drop' 2>/dev/null || true
+
+# 1) Constrained EST/REL fast-path (NOTE: explicit ip family after "ct original")
+nft 'add rule inet dcv forward ct state established,related ct original ip saddr . ct original ip daddr @admin_peer2cidr accept' 2>/dev/null || true
+nft 'add rule inet dcv forward ct state established,related ct original ip saddr . ct original ip daddr @admin_links     accept' 2>/dev/null || true
+nft 'add rule inet dcv forward ct state established,related ct original ip saddr . ct original ip daddr @p2p_links       accept' 2>/dev/null || true
+# For services: accept established by src/dst pair (port was enforced at NEW via svc_guest)
+nft 'add rule inet dcv forward ct state established,related ct original ip saddr . ct original ip daddr @svc_pairs       accept' 2>/dev/null || true
+
+# 2) Hook only WG traffic into wg chain
+nft "add rule inet dcv forward iifname \"${WG_IF}\" goto wg" 2>/dev/null || true
+nft "add rule inet dcv forward oifname \"${WG_IF}\" goto wg" 2>/dev/null || true
+
+# --- wg dispatch: base -> allow -> reject ---
+nft 'flush chain inet dcv wg' 2>/dev/null || true
 nft 'add rule inet dcv wg jump wg_base' 2>/dev/null || true
 nft 'add rule inet dcv wg jump wg_allow' 2>/dev/null || true
 nft 'add rule inet dcv wg counter reject with icmpx type admin-prohibited' 2>/dev/null || true
 
-# Seed base rules once (Python will normalize on startup too)
+# --- wg_base: NEW accepts from sets ---
+nft 'flush chain inet dcv wg_base' 2>/dev/null || true
 nft 'add rule inet dcv wg_base ip saddr . ip daddr @admin_peer2cidr ct state new accept' 2>/dev/null || true
 nft 'add rule inet dcv wg_base ip saddr . ip daddr @admin_links   ct state new accept' 2>/dev/null || true
 nft 'add rule inet dcv wg_base ip saddr . ip daddr @p2p_links     ct state new accept' 2>/dev/null || true
 nft 'add rule inet dcv wg_base meta l4proto { tcp, udp } ip saddr . ip daddr . th dport @svc_guest ct state new accept' 2>/dev/null || true
 
-# NAT table: masquerade WG subnet out of WAN_IF
+# --- wg_allow: (left empty here)
+# Your backend will add per-subnet/per-link NEW rules, and we’ll rely on the
+# matching EST/REL rules added above (using ct original ip …) to keep replies flowing.
+nft 'flush chain inet dcv wg_allow' 2>/dev/null || true
+
+# --- NAT table: masquerade WG subnet out of WAN_IF ---
 nft list table ip nat >/dev/null 2>&1 || nft add table ip nat
 nft 'add chain ip nat prerouting  { type nat hook prerouting  priority -100; }' 2>/dev/null || true
 nft 'add chain ip nat postrouting { type nat hook postrouting priority  100; }' 2>/dev/null || true
-# Refresh masquerade rule idempotently
 nft "delete rule ip nat postrouting oifname \"${WAN_IF}\" ip saddr ${WG_DEFAULT_SUBNET} counter masquerade" 2>/dev/null || true
 nft "add rule ip nat postrouting oifname \"${WAN_IF}\" ip saddr ${WG_DEFAULT_SUBNET} counter masquerade"
+
 
 echo "[init] Ensuring sqlite db folder..."
 mkdir -p /home/db

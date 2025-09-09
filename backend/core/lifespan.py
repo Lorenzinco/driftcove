@@ -43,7 +43,7 @@ def apply_config_from_database():
 
         for peer in peers:
             apply_to_wg_config(peer)
-            for link in peer2peers.get(peer.username, []):
+            for link in peer2peers.get(peer.address, []):
                 add_p2p_link(peer.address, link.address)
 
         for service in services:

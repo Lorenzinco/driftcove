@@ -7,7 +7,7 @@ function uid(prefix = 'id') { return prefix + Math.random().toString(36).slice(2
 
 export const useNetworkStore = defineStore('network', {
     state: () => ({
-    peers: [ { id: uid('p_'), name: 'Peer 1', ip: '10.0.1.10', subnetId: null, x: 540, y: 300, allowed: true, services: {}, host: false } as Peer ],
+    peers: [ { id: uid('p_'), name: 'Peer 1', ip: '10.0.1.10', subnetId: null, x: 540, y: 300, public: true, services: {}, host: false, rx: 0, tx: 0, lastHandshake: 0 } as Peer ],
         subnets: [ { id: uid('s_'), name: 'Office LAN', cidr: '10.0.1.0/24', x: 520, y: 300, width: 360, height: 240, rgba: 0x00FF00E5 } as Subnet ],
         links: [] as Link[],
 
@@ -106,7 +106,7 @@ export const useNetworkStore = defineStore('network', {
             }
         },
 
-    applyBackendTopology(payload: { subnets: Array<{ id: string; name: string; cidr: string; description?: string; x?: number; y?: number; width?: number; height?: number; rgba?: number }>; peers: Array<{ id: string; name: string; ip: string; subnetId: string | null; x?: number; y?: number; services?: Record<string, ServiceInfo>; host?: boolean; presharedKey?: string; publicKey?: string }>; links: Link[] }) {
+    applyBackendTopology(payload: { subnets: Array<{ id: string; name: string; cidr: string; description?: string; x?: number; y?: number; width?: number; height?: number; rgba?: number }>; peers: Array<{ id: string; name: string; ip: string; subnetId: string | null; x?: number; y?: number; services?: Record<string, ServiceInfo>; host?: boolean; presharedKey?: string; publicKey?: string, rx: number, tx: number, lastHandshake: number }>; links: Link[] }) {
             const oldSelection = this.selection
 
             // --- Subnets ---
@@ -173,7 +173,14 @@ export const useNetworkStore = defineStore('network', {
                 if (incoming.presharedKey && existing.presharedKey !== incoming.presharedKey) existing.presharedKey = incoming.presharedKey
                 if (incoming.publicKey && existing.publicKey !== incoming.publicKey) existing.publicKey = incoming.publicKey
                 // Connected if there is a membership link specifically to its own subnetId
-                existing.allowed = !!(existing.subnetId && peerMemberships[existing.id]?.has(existing.subnetId))
+                existing.public = !!(existing.subnetId && peerMemberships[existing.id]?.has(existing.subnetId))
+                // Live stats: update rx/tx/lastHandshake on every refresh
+                const rx = typeof incoming.rx === 'number' && !isNaN(incoming.rx) ? incoming.rx : 0
+                const tx = typeof incoming.tx === 'number' && !isNaN(incoming.tx) ? incoming.tx : 0
+                const lastHandshake = typeof incoming.lastHandshake === 'number' && !isNaN(incoming.lastHandshake) ? incoming.lastHandshake : 0
+                if (existing.rx !== rx) existing.rx = rx
+                if (existing.tx !== tx) existing.tx = tx
+                if (existing.lastHandshake !== lastHandshake) existing.lastHandshake = lastHandshake
                 return true
             })
             for (const inc of payload.peers) {
@@ -195,8 +202,11 @@ export const useNetworkStore = defineStore('network', {
                     }
                     const services = inc.services || {}
                     const host = Object.values(services).some((s:any)=> s && typeof s.port==='number' && !isNaN(s.port))
-                    const allowed = !!(inc.subnetId && peerMemberships[inc.id]?.has(inc.subnetId))
-                    this.peers.push({ id: inc.id, name: inc.name, ip: inc.ip, subnetId: inc.subnetId, x, y, allowed, services, host, presharedKey: inc.presharedKey, publicKey: inc.publicKey })
+                    const peer_public = !!(inc.subnetId && peerMemberships[inc.id]?.has(inc.subnetId))
+                    const rx = typeof inc.rx === 'number' && !isNaN(inc.rx) ? inc.rx : 0
+                    const tx = typeof inc.tx === 'number' && !isNaN(inc.tx) ? inc.tx : 0
+                    const lastHandshake = typeof inc.lastHandshake === 'number' && !isNaN(inc.lastHandshake) ? inc.lastHandshake : 0
+                    this.peers.push({ id: inc.id, name: inc.name, ip: inc.ip, subnetId: inc.subnetId, x, y, public: peer_public, services, host, presharedKey: inc.presharedKey, publicKey: inc.publicKey, rx, tx, lastHandshake})
                 }
             }
 

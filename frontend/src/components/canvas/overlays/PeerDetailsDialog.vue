@@ -15,22 +15,24 @@
           <div v-if="peer.publicKey"><strong>Pub:</strong> <code class="code-inline">{{ peer.publicKey }}</code></div>
           <div class="d-flex align-center ga-2">
             <strong>Connected:</strong>
-            <v-icon :color="peer.allowed ? 'success' : 'error'" size="18" :title="peer.allowed? 'Connected' : 'Not Connected'">{{ peer.allowed ? 'mdi-wifi' : 'mdi-wifi-off' }}</v-icon>
+            <v-icon :color="isOnline ? 'success' : 'error'" size="18" :title="isOnline ? 'Connected' : 'Not Connected'">{{ isOnline ? 'mdi-wifi' : 'mdi-wifi-off' }}</v-icon>
             <v-icon color="primary" size="18" icon="mdi-information" @click="showInfo = true"></v-icon>
             <v-dialog v-model="showInfo" max-width="480">
               <v-card>
                 <v-card-title class="d-flex justify-space-between align-center">
-                  <span><v-icon :color="peer.allowed ? 'success' : 'error'" :icon="peer.allowed ? 'mdi-wifi' : 'mdi-wifi-off'" />Connection details</span>
+                  <span><v-icon :color="peer.public? 'success' : 'error'" :icon="peer.public ? 'mdi-wifi' : 'mdi-wifi-off'" />Connection details</span>
                   <v-btn icon="mdi-close" variant="text" @click="showInfo = false" />
                 </v-card-title>
                 <v-divider />
                 <v-card-text class="text-body-2">
-                    {{ peer.allowed ? 'This peer is allowed to talk inside its subnetwork, if you wish it to be restricted click the disconnect icon right besides the connection status.' : 'This peer is not allowed to communicate in its own subnetwork, if you wish it to be allowed click the connect icon right besides the connection status.' }}
+                    {{ peer.public ? 'This peer is allowed to talk inside its subnetwork, if you wish it to be restricted click the disconnect icon right besides the connection status.' : 'This peer is not allowed to communicate in its own subnetwork, if you wish it to be allowed click the connect icon right besides the connection status.' }}
                 </v-card-text>
                 <v-divider />
               </v-card>
             </v-dialog>
           </div>
+
+          <div> <v-icon icon="mdi-arrow-down" class="text-secondary" /> {{ (peer.rx/1024).toFixed(2) }} KB <v-icon icon="mdi-arrow-up" class="text-secondary" /> {{ (peer.tx/1024).toFixed(2) }} KB</div>
 
           <v-divider />
 
@@ -223,6 +225,10 @@ const open = computed({
   set: (v)=> { if(!v){ store.peerDetailsRequestId=null; store.closePeerDetails(); } }
 });
 const peer = computed(()=> store.peers.find(p=> p.id===store.peerDetailsRequestId));
+const isOnline = computed(()=> {
+  if (!peer.value) return false;
+  return (Date.now()/1000 - peer.value.lastHandshake) < 300; // 5 minutes
+});
 const subnetDisplay = computed(()=>{
   const p = peer.value; if (!p || !p.subnetId) return 'None'
   const s = store.subnets.find(ss=> ss.id===p.subnetId)

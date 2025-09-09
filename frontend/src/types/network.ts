@@ -8,11 +8,14 @@ export interface Peer {
   x: number; y: number;
   ip?: string;
   subnetId?: ID | null;
-  allowed?: boolean; // derived from presence in links
-  host?: boolean; // computed if services present
+  public?: boolean;
+  host?: boolean;
   services?: Record<string, { port: number; name: string; department?: string; description?: string }>;
   presharedKey?: string;
   publicKey?: string;
+  rx: number;
+  tx: number;
+  lastHandshake: number;
 }
 
 export type ServiceInfo = { 

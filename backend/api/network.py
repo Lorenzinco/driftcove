@@ -9,6 +9,7 @@ from backend.core.lock import lock
 from backend.core.database import db
 from backend.core.logger import logging
 from backend.core.lifespan import apply_config_from_database
+from backend.core.wireguard import getPeerInfo
 
 from backend.core.nftables import (
     connect_subnets_bidirectional_public,
@@ -53,6 +54,7 @@ def get_topology(_: Annotated[str, Depends(verify_token)]) -> dict:
 
             peers_fetched = db.get_all_peers()
             for peer in peers_fetched:
+                getPeerInfo(peer)
                 peers[peer.address] = peer
 
             services_fetched = db.get_all_services()
@@ -89,7 +91,6 @@ def get_nft_rules(_: Annotated[str, Depends(verify_token)]):
     try:
         out = subprocess.check_output(["nft", "list", "table", "inet", "dcv"], text=True)
         rules = out
-        logging.info("Retrieved nftables inet/dcv table.")
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to get nft rules: {e}")
         raise HTTPException(status_code=500, detail="Failed to get nft rules")

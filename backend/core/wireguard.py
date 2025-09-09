@@ -31,19 +31,19 @@ def apply_to_wg_config(peer: Peer):
         tmp_psk.write(peer.preshared_key)
         tmp_psk.flush()
         tmp_psk_path = tmp_psk.name
-    try:
-        print(f"Applying WireGuard config for peer: {peer}")
-        subprocess.run([
-            "wg", "set", settings.wg_interface,
-            "peer", peer.public_key,
-            "preshared-key", tmp_psk_path,
-            "allowed-ips", peer.address
-        ], check=True)
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Failed to apply peer config: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to apply peer configuration for {peer}")
-    finally:
-        os.unlink(tmp_psk_path)
+        try:
+            print(f"Applying WireGuard config for peer: {peer}")
+            subprocess.run([
+                "wg", "set", settings.wg_interface,
+                "peer", peer.public_key,
+                "preshared-key", tmp_psk_path,
+                "allowed-ips", peer.address
+            ], check=True)
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Failed to apply peer config: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to apply peer configuration for {peer}")
+        finally:
+            os.unlink(tmp_psk_path)
 
 def remove_from_wg_config(peer: Peer):
     try:
@@ -69,8 +69,7 @@ def generate_keys():
     
 def generate_wg_config(peer: Peer,private_key:str)->str:
     """Generate the WireGuard configuration for a peer."""
-    config = f"""
-[Interface]
+    config = f"""[Interface]
 PrivateKey = {private_key}
 Address = {peer.address}
 MTU = {settings.mtu}
@@ -83,3 +82,33 @@ AllowedIPs = {settings.wg_default_subnet}
 PersistentKeepalive = 15
 """
     return config
+
+def getPeerInfo(peer: Peer):
+    try:
+        output = subprocess.check_output(
+            ["wg", "show", settings.wg_interface, "transfer"]
+        ).strip().decode()
+        lines = output.splitlines()
+        for line in lines:
+            parts = line.split()
+            if len(parts) == 3:
+                pubkey, rx, tx = parts
+                if pubkey == peer.public_key:
+                    peer.tx = int(tx)
+                    peer.rx = int(rx)
+
+        output = subprocess.check_output(
+            ["wg", "show", settings.wg_interface, "latest-handshakes"]
+        ).strip().decode()
+        lines = output.splitlines()
+        for line in lines:
+            parts = line.split()
+            if len(parts) == 2:
+                pubkey, handshake = parts
+                if pubkey == peer.public_key:
+                    peer.last_handshake = int(handshake)
+                    if peer.last_handshake == 0:
+                        peer.last_handshake = -1
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to get peer info: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get peer info")

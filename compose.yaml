@@ -8,6 +8,7 @@ services:
       - WG_DEFAULT_SUBNET=10.128.0.0/9
       - WAN_IF=eth0
       - WG_BACKEND_TCP_PORT=8000
+      - ENDPOINT=joker-rm.myfritz.link
 
     sysctls:
       net.ipv4.ip_forward: "1"

@@ -173,7 +173,7 @@
                                 <v-icon icon="mdi-server" size="16" class="me-1" />
                             </template>
                             <template #append>
-                                <v-icon :color="p.allowed ? 'blue' : 'yellow'" icon="mdi-lightbulb" size="16" />
+                                <v-icon :color="(Date.now()/1000 - (p as any).lastHandshake) < 300 ? 'blue' : 'yellow'" icon="mdi-lightbulb" size="16" />
                             </template>
                         </v-list-item>
                         <v-list-item v-if="!hostPeers.length" title="No hosts" disabled />
@@ -198,7 +198,7 @@
                                 <v-icon icon="mdi-account-circle-outline" size="16" class="me-1" />
                             </template>
                             <template #append>
-                                <v-icon :color="p.allowed ? 'blue' : 'yellow'" icon="mdi-lightbulb" size="16" />
+                                <v-icon :color="(Date.now()/1000 - (p as any).lastHandshake) < 300 ? 'blue' : 'yellow'" icon="mdi-lightbulb" size="16" />
                             </template>
                         </v-list-item>
                         <v-list-item v-if="!nonHostPeers.length" title="No peers" disabled />

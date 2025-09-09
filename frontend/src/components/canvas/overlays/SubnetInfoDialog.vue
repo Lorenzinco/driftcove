@@ -26,7 +26,10 @@
                           <v-icon size="18" icon="mdi-account" class="text-primary" />{{ peer.name || key }}
                         </v-list-item-title>
                         <v-list-item-subtitle>
-                          ip: {{ peer.ip }} <span v-if="peer.allowed">| Connected  <v-icon size="18" icon="mdi-check" class="text-success" /></span>
+                          ip: {{ peer.ip }}
+                          <span v-if="(Date.now()/1000 - (peer as any).lastHandshake) < 300">
+                            | Connected  <v-icon size="18" icon="mdi-check" class="text-success" />
+                          </span>
                         </v-list-item-subtitle>
                       </v-list-item>
                     </v-list>

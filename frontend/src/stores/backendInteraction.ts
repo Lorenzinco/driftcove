@@ -103,7 +103,6 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 			try {
 				const { data } = await getClient().get<any>('/api/network/topology')
 				const rules = await this.getNftTableRules()
-				console.log(rules)
 				const topo = data.topology || {}
 				const subnetsDict = topo.subnets || {}
 				const peersDict = topo.peers || {}
@@ -136,7 +135,7 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 				}
 
 				// Peers
-				const peersMeta: Array<{ id: string; name: string; ip: string; subnetId: string | null; x?: number; y?: number; services?: Record<string, any>; host?: boolean; presharedKey?: string; publicKey?: string }> = []
+				const peersMeta: Array<{ id: string; name: string; ip: string; subnetId: string | null; x?: number; y?: number; services?: Record<string, any>; host?: boolean; presharedKey?: string; publicKey?: string; rx: number; tx: number; lastHandshake: number }> = []
 				for (const addr of Object.keys(peersDict)) {
 					const p = peersDict[addr]
 					if (!p || !p.public_key) continue
@@ -146,7 +145,10 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 					const subnetId = contained[p.public_key] || null
 					const id = p.public_key // raw public key as id
 					const host = Object.values(services).some((sv:any)=> sv && typeof sv.port === 'number' && !isNaN(sv.port))
-					peersMeta.push({ id, name: p.username, ip: p.address, subnetId, x: p.x, y: p.y, services, host, presharedKey: p.preshared_key, publicKey: p.public_key })
+					const rx = typeof p.rx === 'number' && !isNaN(p.rx) ? p.rx : 0
+					const tx = typeof p.tx === 'number' && !isNaN(p.tx) ? p.tx : 0
+					const lastHandshake = typeof p.last_handshake === 'number' && !isNaN(p.last_handshake) ? p.last_handshake : 0
+					peersMeta.push({ id, name: p.username, ip: p.address, subnetId, x: p.x, y: p.y, services, host, presharedKey: p.preshared_key, publicKey: p.public_key, rx, tx, lastHandshake })
 				}
 
 				// Map for quick lookup
@@ -232,7 +234,22 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 
 				// Finalize
 				this.topology = { peers: peersMeta, subnets: subnetsMeta, links: links.map(l => ({ id: l.id, fromId: l.fromId, toId: l.toId, kind: l.kind, serviceName: (l as any).serviceName })) }
-				useNetworkStore().applyBackendTopology({ peers: peersMeta, subnets: subnetsMeta, links })
+				// Pass through rx/tx/lastHandshake so the network store can update live stats
+				useNetworkStore().applyBackendTopology({ peers: peersMeta.map(p=> ({
+					id: p.id,
+					name: p.name,
+					ip: p.ip,
+					subnetId: p.subnetId,
+					x: p.x,
+					y: p.y,
+					services: p.services,
+					host: p.host,
+					presharedKey: p.presharedKey,
+					publicKey: p.publicKey,
+					rx: p.rx,
+					tx: p.tx,
+					lastHandshake: p.lastHandshake
+				})), subnets: subnetsMeta, links })
 				// Notify canvas to force an immediate redraw (initial real data)
 				window.dispatchEvent(new CustomEvent('topology-updated'))
 				this.lastFetchedAt = Date.now()

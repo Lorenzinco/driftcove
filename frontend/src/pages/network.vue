@@ -108,7 +108,8 @@
         addSubnetDialog.value?.showAt(worldX, worldY);
     }
     onMounted(()=> { 
-        backend.startTopologyPolling(2500); 
+        // Poll topology to refresh peer RX/TX and handshakes frequently
+        backend.startTopologyPolling(2000); 
         window.addEventListener('add-subnet-dialog-closed', handleSubnetDialogClosed); 
         window.addEventListener('request-link-type', handleRequestLinkType);
         window.addEventListener('request-cut-link', handleRequestCutLink);

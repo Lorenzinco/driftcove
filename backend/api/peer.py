@@ -28,6 +28,8 @@ def create_peer(username: str, subnet: str, _: Annotated[str, Depends(verify_tok
     NOTE: Networking permissions are handled by subnet/service/p2p endpoints.
     """
     keys = generate_keys()
+    if len(username) <= 0 or len(username) > 15:
+        raise HTTPException(status_code=400, detail="Username must be between 1 and 15 characters long")
     with lock.write_lock(), state_manager.saved_state():
         try:
             # If peer exists, remove it first (DB + WG entry will be replaced)

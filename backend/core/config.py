@@ -17,7 +17,7 @@ try:
     with open("/etc/wireguard/publickey", "r") as f:
         public_key_value = f.read().strip()
 except FileNotFoundError:
-    public_key_value = ""
+    raise Exception("Public key file not found at /etc/wireguard/publickey. Please ensure WireGuard is installed and the key file exists.")
 
 wg_udp_port = int(os.getenv("WG_UDP_PORT", 1194))
 wg_backend_tcp_port = int(os.getenv("WG_BACKEND_TCP_PORT", 8000))

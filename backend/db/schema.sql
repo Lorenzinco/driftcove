@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS peers (
     public_key TEXT NOT NULL UNIQUE,
     preshared_key TEXT,
     x FLOAT,
-    y FLOAT
+    y FLOAT,
+    CHECK (length(username) > 0 AND length(username) <= 15)
 );
 
         

@@ -26,6 +26,9 @@ class Peer(BaseModel):
     services: dict[str, Service] = Field(default_factory=dict)
     x: float
     y: float
+    tx: int = 0
+    rx: int = 0
+    last_handshake: int = 0
 
     def from_json(self, data: dict):
         self.username = data.get("username", self.username)
