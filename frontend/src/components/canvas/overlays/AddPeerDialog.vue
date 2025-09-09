@@ -53,6 +53,7 @@ function close(){ open.value=false; }
 
 async function submit(){
   if (!username.value.trim()) { error.value='Username required'; return; }
+  if ( username.value.trim().length < 1 || username.value.trim().length > 15 ) { error.value='Username too short or too long, username must be between 1 and 15 characters'; return; }
   if (!subnet.value) { error.value='Subnet not found'; return; }
   loading.value=true; error.value='';
   try {

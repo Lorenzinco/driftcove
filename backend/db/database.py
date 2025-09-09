@@ -87,8 +87,8 @@ class Database:
             self.conn.execute("""
                 UPDATE peers
                 SET username = ?, public_key = ?, preshared_key = ?, address = ?, x = ?, y = ?
-                WHERE public_key = ?
-            """, (peer.username, peer.public_key, peer.preshared_key, peer.address, peer.x, peer.y, peer.public_key))
+                WHERE username = ?
+            """, (peer.username, peer.public_key, peer.preshared_key, peer.address, peer.x, peer.y, peer.username))
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while updating peer: {e}")
         

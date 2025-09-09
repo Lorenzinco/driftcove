@@ -15,22 +15,51 @@
           <div v-if="peer.publicKey"><strong>Pub:</strong> <code class="code-inline">{{ peer.publicKey }}</code></div>
           <div class="d-flex align-center ga-2">
             <strong>Connected:</strong>
-            <v-icon :color="isOnline ? 'success' : 'error'" size="18" :title="isOnline ? 'Connected' : 'Not Connected'">{{ isOnline ? 'mdi-wifi' : 'mdi-wifi-off' }}</v-icon>
-            <v-icon color="primary" size="18" icon="mdi-information" @click="showInfo = true"></v-icon>
+            <v-icon
+              :color="isOnline ? 'success' : 'error'"
+              size="18"
+              :title="lastHandshakeTitle">
+              {{ isOnline ? 'mdi-wifi' : 'mdi-wifi-off' }}
+            </v-icon>
+            <strong>{{ peer.public ? 'Public' : 'Unreachable' }}</strong>
+            <v-icon :color="peer.public ? 'success' : 'error'" size="18" icon="mdi-web" @click="showInfo = true"></v-icon>
             <v-dialog v-model="showInfo" max-width="480">
               <v-card>
                 <v-card-title class="d-flex justify-space-between align-center">
-                  <span><v-icon :color="peer.public? 'success' : 'error'" :icon="peer.public ? 'mdi-wifi' : 'mdi-wifi-off'" />Connection details</span>
+                  <span><v-icon :color="peer.public? 'success' : 'error'" icon="mdi-web" />Connection details</span>
                   <v-btn icon="mdi-close" variant="text" @click="showInfo = false" />
                 </v-card-title>
                 <v-divider />
                 <v-card-text class="text-body-2">
-                    {{ peer.public ? 'This peer is allowed to talk inside its subnetwork, if you wish it to be restricted click the disconnect icon right besides the connection status.' : 'This peer is not allowed to communicate in its own subnetwork, if you wish it to be allowed click the connect icon right besides the connection status.' }}
+                    {{ !peer.public ? 'This peer is not public in its own subnetwork, this means that no other peer than those who are directly linked to it and admins can communicate with it. To make it public create a link between this peer and his own subnetwork' :  'This peer is public, this means that any peer in the subnetwork can reach it directly.'}}
                 </v-card-text>
                 <v-divider />
               </v-card>
             </v-dialog>
           </div>
+
+          <v-alert
+            v-if="peer.public"
+            type="success"
+            density="comfortable"
+            variant="tonal"
+            class="my-2"
+            :text="`This peer is public in its subnet (${subnetDisplay}). Any peer in this subnet can reach it directly.`"
+            prepend-icon="mdi-web"
+          >
+            <template #append>
+              <v-btn
+                size="small"
+                color="error"
+                variant="text"
+                :disabled="!ownSubnetCidr"
+                :loading="disconnectPublicLoading"
+                @click="disconnectPublic"
+              >
+                Disconnect
+              </v-btn>
+            </template>
+          </v-alert>
 
           <div> <v-icon icon="mdi-arrow-down" class="text-secondary" /> {{ (peer.rx/1024).toFixed(2) }} KB <v-icon icon="mdi-arrow-up" class="text-secondary" /> {{ (peer.tx/1024).toFixed(2) }} KB</div>
 
@@ -210,7 +239,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue';
 import AddServiceDialog from './AddServiceDialog.vue';
 import ConfirmCutLinkDialog from './ConfirmCutLinkDialog.vue';
 import { useNetworkStore } from '@/stores/network';
@@ -225,9 +254,28 @@ const open = computed({
   set: (v)=> { if(!v){ store.peerDetailsRequestId=null; store.closePeerDetails(); } }
 });
 const peer = computed(()=> store.peers.find(p=> p.id===store.peerDetailsRequestId));
+// tick every second to keep timers fresh while dialog is open
+const nowSec = ref(Math.floor(Date.now()/1000));
+let tickHandle: number | null = null;
+onMounted(() => { tickHandle = window.setInterval(() => { nowSec.value = Math.floor(Date.now()/1000); }, 1000); });
+onBeforeUnmount(() => { if (tickHandle) { clearInterval(tickHandle); tickHandle = null; } });
+
 const isOnline = computed(()=> {
   if (!peer.value) return false;
-  return (Date.now()/1000 - peer.value.lastHandshake) < 300; // 5 minutes
+  return (nowSec.value - peer.value.lastHandshake) < 300; // 5 minutes
+});
+const lastHandshakeTitle = computed(() => {
+  const p = peer.value;
+  if (!p || !Number.isFinite(p.lastHandshake) || p.lastHandshake <= 0) return 'never';
+  const delta = Math.max(0, nowSec.value - Math.floor(p.lastHandshake));
+  const m = Math.floor(delta / 60);
+  const s = delta % 60;
+  return `Last handshake: ${m}m ${String(s).padStart(2,'0')}s ago`;
+});
+const ownSubnetCidr = computed(() => {
+  const p = peer.value; if (!p || !p.subnetId) return null
+  const s = store.subnets.find(ss => ss.id === p.subnetId)
+  return s?.cidr || p.subnetId
 });
 const subnetDisplay = computed(()=>{
   const p = peer.value; if (!p || !p.subnetId) return 'None'
@@ -319,6 +367,18 @@ async function recreateConfig(){
       setTimeout(()=> { document.body.removeChild(a); URL.revokeObjectURL(url); },0);
     }
   } finally { dlLoading.value=false; }
+}
+
+// Disconnect the peer's public membership to its own subnet
+const disconnectPublicLoading = ref(false)
+async function disconnectPublic(){
+  if (!peer.value || !ownSubnetCidr.value) return
+  disconnectPublicLoading.value = true
+  try {
+    await backend.disconnectPeerFromSubnet(peer.value.name, ownSubnetCidr.value)
+  } finally {
+    disconnectPublicLoading.value = false
+  }
 }
 
 // --- Cut link functionality with dialog ---

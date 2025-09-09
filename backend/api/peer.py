@@ -94,7 +94,7 @@ def regenerate_config(username: str, _: Annotated[str, Depends(verify_token)]):
             peer.preshared_key = keys["preshared_key"]
             db.update_peer(peer)
             apply_to_wg_config(peer)
-
+            logging.info(f"Generating new config for peer {peer}")
             configuration = generate_wg_config(peer, keys["private_key"])
             return {"configuration": configuration}
         except Exception as e:

@@ -53,6 +53,8 @@ def get_topology(_: Annotated[str, Depends(verify_token)]) -> dict:
                 network[subnet.subnet] = peers_in_subnet
 
             peers_fetched = db.get_all_peers()
+            logging.info(f"Fetched {len(peers_fetched)} peers from the database.")
+            logging.info("Peer details:",peers_fetched)
             for peer in peers_fetched:
                 getPeerInfo(peer)
                 peers[peer.address] = peer

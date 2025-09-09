@@ -103,6 +103,7 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 			try {
 				const { data } = await getClient().get<any>('/api/network/topology')
 				const rules = await this.getNftTableRules()
+				console.log(rules)
 				const topo = data.topology || {}
 				const subnetsDict = topo.subnets || {}
 				const peersDict = topo.peers || {}
