@@ -112,3 +112,15 @@ def getPeerInfo(peer: Peer):
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to get peer info: {e}")
         raise HTTPException(status_code=500, detail="Failed to get peer info")
+    
+def apply_ip_route():
+    try:
+        logging.info(f"Applying IP route for {settings.wg_default_subnet} via {settings.wg_interface}...")
+        subprocess.run(
+            ["ip", "route", "replace", settings.wg_default_subnet, "dev", settings.wg_interface],
+            check=True
+        )
+        logging.info(f"IP route applied for {settings.wg_default_subnet} via {settings.wg_interface}.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to apply IP route: {e}")
+        raise HTTPException(status_code=500, detail="Failed to apply IP route")

@@ -3,8 +3,18 @@ from contextlib import asynccontextmanager
 from backend.core.config import settings
 from backend.core.database import db
 from backend.core.logger import logging
-from backend.core.nftables import flush_dcv, ensure_subnet, add_member, make_public, add_p2p_link, grant_service, connect_subnets_bidirectional_public, grant_subnet_service
-from backend.core.wireguard import apply_to_wg_config, flush_wireguard
+from backend.core.nftables import (
+    flush_dcv, 
+    ensure_subnet, 
+    add_member, make_public, 
+    add_p2p_link, grant_service, 
+    connect_subnets_bidirectional_public, 
+    grant_subnet_service,
+    grant_admin_subnet_to_subnet,
+    grant_admin_peer_to_peer,
+    grant_admin_peer_to_subnet,
+)
+from backend.core.wireguard import apply_to_wg_config, flush_wireguard, apply_ip_route
 from backend.db.init_db import init_db
 from backend.core.nftables import ensure_table_and_chain
 
@@ -12,6 +22,11 @@ from backend.core.nftables import ensure_table_and_chain
 async def lifespan(app: FastAPI):
     # STARTUP CODE
     logging.info("Starting Driftcove WireGuard API...")
+    try:
+        apply_ip_route()
+    except Exception as e:
+        logging.error(f"Failed to apply IP route: {e}")
+        raise
     try:
         init_db(settings.db_path)
         logging.info("Database initialized successfully.")
@@ -40,11 +55,16 @@ def apply_config_from_database():
         services = db.get_all_services()
         peer2services = db.get_links_between_peers_and_services()
         peer2peers = db.get_links_between_peers()
+        admin_peer2peers = db.get_admin_links_from_peer_to_peers()
+        admin_peer2subnets = db.get_admin_links_from_peer_to_subnets()
+        admin_subnet2subnets = db.get_admin_links_from_subnet_to_subnet()
 
         for peer in peers:
             apply_to_wg_config(peer)
             for link in peer2peers.get(peer.address, []):
                 add_p2p_link(peer.address, link.address)
+            for link in admin_peer2peers.get(peer.address, []):
+                grant_admin_peer_to_peer(peer.address, link.address)
 
         for service in services:
             for peer in peer2services.get(service.name, []):
@@ -60,11 +80,12 @@ def apply_config_from_database():
         subnet_to_service_links = db.get_links_from_subnets_to_services()
 
         for subnet in subnets:
-            ensure_subnet(subnet.subnet)   # creates {members,public} sets and the members->public rule
+            logging.info(f"Ensuring nftables structures for subnet {subnet.name} ({subnet.subnet})")
+            ensure_subnet(subnet.subnet)
 
-            # (A) Members: if you have an explicit list in DB, use it:
-            # members = db.get_peers_in_subnet(subnet)   # preferred
-            # If not, fall back to "linked-to-subnet == public+member" (as legacy iptables code implied)
+        # now add all the other rules
+        for subnet in subnets:
+
             linked_peers = db.get_peers_linked_to_subnet(subnet)  # legacy “link”
             for peer in linked_peers:
                 add_member(subnet.subnet, peer.address)
@@ -80,16 +101,26 @@ def apply_config_from_database():
                 logging.info(f"Subnet {subnet.name} ({subnet.subnet}) is linked to {linked_subnet.name} ({linked_subnet.subnet})")
                 connect_subnets_bidirectional_public(subnet.subnet, linked_subnet.subnet)
 
-            services = subnet_to_service_links.get(subnet.subnet, [])
-            for service in services:
+            link_services = subnet_to_service_links.get(subnet.subnet, [])
+            for service in link_services:
                 host = db.get_service_host(service)
                 if host is None:
                     raise Exception(f"Service host for service {service.name} not found")
                 logging.info(f"Subnet {subnet.name} ({subnet.subnet}) has service {service.name} on {host.address}:{service.port}")
                 grant_subnet_service(subnet.subnet, host.address, service.port)
-                
 
+            admin_subnet2subnets_links = admin_subnet2subnets.get(subnet.subnet, [])
+            for linked_subnet in admin_subnet2subnets_links:
+                logging.info(f"Admin subnet {subnet.name} ({subnet.subnet}) granted admin access to subnet {linked_subnet.name} ({linked_subnet.subnet})")
+                grant_admin_subnet_to_subnet(subnet.subnet, linked_subnet.subnet)
+
+        for peer in peers:
+            admin_subnets = admin_peer2subnets.get(peer.address, [])
+            for subnet in admin_subnets:
+                logging.info(f"Admin peer {peer.username} ({peer.address}) granted admin access to subnet {subnet.name} ({subnet.subnet})")
+                grant_admin_peer_to_subnet(peer.address, subnet.subnet)
         
+
         logging.info("Loaded and applied WireGuard configuration from database")
     except Exception as e:
         logging.error(f"Failed to apply WireGuard configuration: {e}")

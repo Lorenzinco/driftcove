@@ -39,7 +39,7 @@ export interface Link {
   id: ID;
   fromId: ID;
   toId: ID;
-  kind: 'p2p' | 'service' | 'membership' | 'subnet-subnet' | 'subnet-service';
+  kind: 'p2p' | 'service' | 'membership' | 'subnet-subnet' | 'subnet-service' | 'admin-p2p' | 'admin-peer-subnet' | 'admin-subnet-subnet';
   serviceName?: string;
 }
 

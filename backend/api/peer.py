@@ -7,6 +7,7 @@ from backend.core.database import db
 from backend.core.state_manager import state_manager
 from backend.core.logger import logging
 from backend.core.models import Peer, Subnet
+import ipaddress
 from backend.core.wireguard import (
     apply_to_wg_config, generate_keys, generate_wg_config, remove_from_wg_config
 )
@@ -16,6 +17,9 @@ from backend.core.nftables import (
     revoke_service,            # peer -> service tuple revoke
     revoke_public, del_member, # subnet membership removal
     add_p2p_link, remove_p2p_link,
+    add_member,
+    grant_admin_peer_to_peer,
+    revoke_admin_peer_to_peer
 )
 
 router = APIRouter(tags=["peer"])
@@ -35,7 +39,7 @@ def create_peer(username: str, subnet: str, _: Annotated[str, Depends(verify_tok
             # If peer exists, remove it first (DB + WG entry will be replaced)
             old_peer = db.get_peer_by_username(username)
             if old_peer is not None:
-                db.remove_peer(old_peer)
+                raise HTTPException(status_code=400, detail="Peer with this username already exists")
 
             subnet_obj: Subnet | None = db.get_subnet_by_address(subnet)
             if subnet_obj is None:
@@ -62,11 +66,15 @@ def create_peer(username: str, subnet: str, _: Annotated[str, Depends(verify_tok
             )
             logging.info(f"Adding peer {peer} to the database")
             db.create_peer(peer)
-
-            if old_peer is not None:
-                remove_from_wg_config(old_peer)
-
             apply_to_wg_config(peer)
+
+            logging.info(f"Adding peer {peer.username}'s ruleset to nftables")
+            subnets = db.get_peers_subnets(peer)
+            if not subnets:
+                raise HTTPException(status_code=404, detail=f"Peer {peer.username} is not in any subnet")
+            for subnet in subnets:
+                logging.info(f"Adding nftables rules for subnet {subnet}")
+                add_member(subnet.subnet, peer.address)
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Database/WG update failed: {e}")
@@ -213,7 +221,24 @@ def get_user_subnets(username: str, _: Annotated[str, Depends(verify_token)]):
             peer = db.get_peer_by_username(username)
             if peer is None:
                 raise HTTPException(status_code=404, detail="Peer not found")
-            subnet = db.get_peers_subnet(peer)
+            subnets = db.get_peers_subnets(peer)
+            if subnets is None or len(subnets) == 0:
+                raise HTTPException(status_code=404, detail="Peer is not in any subnet")
+            #take the tightest matching subnet as primary
+            best = None
+            best_pl = -1
+            for s in subnets:
+                net_str = getattr(s, "address", None) or getattr(s, "subnet", None)
+                if not net_str:
+                    continue
+                try:
+                    pl = ipaddress.ip_network(net_str, strict=False).prefixlen
+                except ValueError:
+                    continue
+                if pl > best_pl:
+                    best_pl = pl
+                    best = s
+            subnet = best or subnets[0]
             subnet_links = db.get_peers_links_to_subnets(peer)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
@@ -260,3 +285,43 @@ def disconnect_two_peers(peer1_username: str, peer2_username: str,
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Disconnecting the two peers failed: {e}")
     return {"message": f"Peers {peer1_username} and {peer2_username} disconnected"}
+
+@router.post("/admin/peer/connect", tags=["peer","admin"])
+def connect_admin_peer_to_peer(admin_username: str, peer_username: str,
+                      _: Annotated[str, Depends(verify_token)]):
+    """
+    Connect an admin peer to a regular peer via nftables p2p links.
+    """
+    with lock.write_lock(), state_manager.saved_state():
+        try:
+            admin_peer = db.get_peer_by_username(admin_username)
+            peer = db.get_peer_by_username(peer_username)
+            if admin_peer is None or peer is None:
+                raise HTTPException(status_code=404, detail="One or both peers not found")
+
+            grant_admin_peer_to_peer(admin_peer.address, peer.address)
+            db.add_admin_link_from_peer_to_peer(admin_peer, peer)
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Connecting the two peers failed: {e}")
+    return {"message": f"Admin peer {admin_username} and peer {peer_username} connected"}
+
+@router.delete("/admin/peer/disconnect", tags=["peer","admin"])
+def disconnect_admin_peer_from_peer(admin_username: str, peer_username: str,
+                         _: Annotated[str, Depends(verify_token)]):
+    """
+    Disconnect an admin peer from a regular peer (remove nftables p2p links and DB edge).
+    """
+    with lock.write_lock(), state_manager.saved_state():
+        try:
+            admin_peer = db.get_peer_by_username(admin_username)
+            peer = db.get_peer_by_username(peer_username)
+            if admin_peer is None or peer is None:
+                raise HTTPException(status_code=404, detail="One or both peers not found")
+
+            revoke_admin_peer_to_peer(admin_peer.address, peer.address)  # removes both directions
+            db.remove_admin_link_from_peer_to_peer(admin_peer, peer)
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Disconnecting the two peers failed: {e}")
+    return {"message": f"Admin peer {admin_username} and peer {peer_username} disconnected"}

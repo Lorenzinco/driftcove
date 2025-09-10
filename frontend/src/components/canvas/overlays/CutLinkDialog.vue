@@ -23,7 +23,25 @@
               <v-list-item v-bind="props" :title="item.raw.label" density="compact">
                 <template #prepend>
                   <div class="d-flex align-center ga-1">
-                    <v-icon :icon="item.raw.kind==='service' ? 'mdi-server' : 'mdi-account-multiple-outline'" :color="item.raw.kind==='service' ? 'primary' : 'success'" size="16" />
+                    <v-icon
+                      :icon="
+                        item.raw.kind==='service' ? 'mdi-server' :
+                        item.raw.kind==='admin-p2p' ? 'mdi-shield-account' :
+                        item.raw.kind==='admin-subnet-subnet' ? 'mdi-shield' :
+                        item.raw.kind==='admin-peer-subnet' ? 'mdi-shield-account' :
+                        item.raw.kind==='subnet-subnet' ? 'mdi-lan' :
+                        'mdi-account-multiple-outline'
+                      "
+                      :color="
+                        item.raw.kind==='service' ? 'primary' :
+                        item.raw.kind==='admin-p2p' ? 'info' :
+                        item.raw.kind==='admin-subnet-subnet' ? 'info' :
+                        item.raw.kind==='admin-peer-subnet' ? 'info' :
+                        item.raw.kind==='subnet-subnet' ? 'success' :
+                        'success'
+                      "
+                      size="16"
+                    />
                     <v-icon v-if="item.raw.kind==='p2p' && problematicLinkIds.has(item.raw.id)" icon="mdi-alert-circle" color="warning" size="16" />
                   </div>
                 </template>
@@ -31,7 +49,25 @@
             </template>
             <template #selection="{ item }">
               <div class="d-flex align-center ga-1">
-                <v-icon :icon="item.raw.kind==='service' ? 'mdi-server' : 'mdi-account-multiple-outline'" :color="item.raw.kind==='service' ? 'primary' : 'success'" size="16" />
+                <v-icon
+                  :icon="
+                    item.raw.kind==='service' ? 'mdi-server' :
+                    item.raw.kind==='admin-p2p' ? 'mdi-shield-account' :
+                    item.raw.kind==='admin-subnet-subnet' ? 'mdi-shield' :
+                    item.raw.kind==='admin-peer-subnet' ? 'mdi-shield-account' :
+                    item.raw.kind==='subnet-subnet' ? 'mdi-lan' :
+                    'mdi-account-multiple-outline'
+                  "
+                  :color="
+                    item.raw.kind==='service' ? 'primary' :
+                    item.raw.kind==='admin-p2p' ? 'info' :
+                    item.raw.kind==='admin-subnet-subnet' ? 'info' :
+                    item.raw.kind==='admin-peer-subnet' ? 'info' :
+                    item.raw.kind==='subnet-subnet' ? 'success' :
+                    'success'
+                  "
+                  size="16"
+                />
                 <v-icon v-if="item.raw.kind==='p2p' && problematicLinkIds.has(item.raw.id)" icon="mdi-alert-circle" color="warning" size="16" />
                 <span>{{ item.raw.label }}</span>
               </div>
@@ -54,6 +90,9 @@
     :link="currentLink"
   :mode="currentLink ? (
     currentLink.kind==='p2p' ? 'p2p' :
+    currentLink.kind==='admin-p2p' ? 'admin-p2p' :
+  currentLink.kind==='admin-subnet-subnet' ? 'admin-subnet-subnet' :
+  currentLink.kind==='admin-peer-subnet' ? 'admin-peer-subnet' :
     currentLink.kind==='membership' ? 'membership' :
     currentLink.kind==='subnet-subnet' ? 'subnet-subnet' :
     currentLink.kind==='subnet-service' ? 'subnet-service' :
@@ -113,6 +152,9 @@ const selectItems = computed(()=> links.value.map(l=> {
   if (l.kind === 'p2p') {
     return { value: l.id, kind: l.kind, label: `${from} ↔ ${to}`, id: l.id };
   }
+  if (l.kind === 'admin-p2p') {
+    return { value: l.id, kind: l.kind, label: `${from} → ${to} (admin)`, id: l.id };
+  }
   if (l.kind === 'service') {
     const fromPeer = store.peers.find(p=> p.id===l.fromId);
     const svcRec = fromPeer?.services?.[l.serviceName || ''];
@@ -123,6 +165,12 @@ const selectItems = computed(()=> links.value.map(l=> {
   }
   if (l.kind === 'subnet-subnet') {
     return { value: l.id, kind: l.kind, label: `${from} ↔ ${to} (subnet link)`, id: l.id };
+  }
+  if (l.kind === 'admin-subnet-subnet') {
+    return { value: l.id, kind: l.kind, label: `${from} → ${to} (admin subnet)`, id: l.id };
+  }
+  if (l.kind === 'admin-peer-subnet') {
+    return { value: l.id, kind: l.kind, label: `${from} → ${to} (admin subnet)`, id: l.id };
   }
   if (l.kind === 'subnet-service') {
     const host = store.peers.find(p=> p.id===l.fromId);
@@ -155,6 +203,10 @@ async function performDelete(){
       const a = store.peers.find(p=> p.id===link.fromId);
       const b = store.peers.find(p=> p.id===link.toId);
       if (a && b) await backend.disconnectPeers(a.name, b.name);
+    } else if (link.kind === 'admin-p2p') {
+      const admin = store.peers.find(p=> p.id===link.fromId);
+      const regular = store.peers.find(p=> p.id===link.toId);
+      if (admin && regular) await backend.disconnectAdminPeerFromPeer(admin.name, regular.name);
     } else if (link.kind === 'service') {
       const consumer = store.peers.find(p=> p.id===link.toId);
       const svcName = link.serviceName || '';
@@ -170,10 +222,19 @@ async function performDelete(){
       const a = store.subnets.find(s=> s.id===link.fromId) || store.subnets.find(s=> s.id===link.toId);
       const b = store.subnets.find(s=> s.id===link.toId) || store.subnets.find(s=> s.id===link.fromId);
       if (a && b) await backend.disconnectSubnetFromSubnet(a.cidr, b.cidr);
+    } else if (link.kind === 'admin-subnet-subnet') {
+      // Directional: fromId is admin subnet source
+      const adminSubnet = store.subnets.find(s=> s.id===link.fromId);
+      const targetSubnet = store.subnets.find(s=> s.id===link.toId);
+      if (adminSubnet && targetSubnet) await backend.disconnectAdminSubnetFromSubnet(adminSubnet.cidr, targetSubnet.cidr);
     } else if (link.kind === 'subnet-service') {
       const subnet = store.subnets.find(s=> s.id===link.toId) || store.subnets.find(s=> s.id===link.fromId);
       const svcName = link.serviceName || '';
       if (subnet && svcName) await backend.disconnectSubnetFromService(subnet.cidr, svcName);
+    } else if (link.kind === 'admin-peer-subnet') {
+      const adminPeer = store.peers.find(p=> p.id===link.fromId);
+      const subnet = store.subnets.find(s=> s.id===link.toId);
+      if (adminPeer && subnet) await backend.disconnectAdminPeerFromSubnet(adminPeer.name, subnet.cidr);
     }
   } catch(e){ /* error handled in backend store */ }
   finally {

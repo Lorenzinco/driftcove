@@ -16,7 +16,9 @@ from backend.core.nftables import (
     revoke_subnet_service,
     del_member,
     revoke_public,
-    revoke_service
+    revoke_service,
+    grant_admin_peer_to_subnet,
+    revoke_admin_peer_to_subnet
 )
 
 
@@ -33,6 +35,16 @@ def create_subnet(subnet: Subnet, _: Annotated[str, Depends(verify_token)]):
         try:
             db.create_subnet(subnet)
             ensure_subnet(subnet.subnet)
+            # Auto-snap existing peers whose address already resides inside this subnet's CIDR.
+            peers_in_subnet = db.get_peers_in_subnet(subnet)
+            for peer in peers_in_subnet:
+                # Persist membership link (DB) so frontend immediately reflects containment.
+                try:
+                    db.add_link_from_peer_to_subnet(peer, subnet)
+                except Exception as inner_e:
+                    logging.warning(f"Peer {peer.username} membership insert failed (possibly duplicate): {inner_e}")
+                # nftables membership (do NOT mark public here; explicit connect endpoint handles that)
+                add_member(subnet.subnet, peer.address)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Subnet creation failed: {e}")
     
@@ -205,3 +217,52 @@ def disconnect_peer_from_subnet(username: str, subnet: str, _: Annotated[str, De
             raise HTTPException(status_code=500, detail=f"Disconnection of peer {username} from subnet {subnet} failed: {e}")
 
     return {"message": "Peer disconnected from subnet"}
+
+@router.post("/admin/connect",tags=["subnet","admin"])
+def admin_connect_peer_to_subnet(admin_username: str, subnet: str, _: Annotated[str, Depends(verify_token)]):
+    """ 
+    Makes a peer an admin of a specific subnet. An admin peer can connect to any other peer inside the subnet, even if they are not public.
+    """
+    with lock.write_lock(), state_manager.saved_state():
+        try:
+            peer_obj = db.get_peer_by_username(admin_username)
+            if peer_obj is None:
+                raise HTTPException(status_code=404, detail="Peer not found")
+            subnet_obj = db.get_subnet_by_address(subnet)
+            if subnet_obj is None:
+                raise HTTPException(status_code=404, detail="Subnet not found")
+
+            db.add_admin_link_from_peer_to_subnet(peer_obj, subnet_obj)
+            logging.info(f"Adding admin peer {peer_obj.username} to subnet {subnet_obj.subnet}")
+            ensure_subnet(subnet_obj.subnet)
+            grant_admin_peer_to_subnet(peer_obj.address, subnet_obj.subnet)
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Connecting admin peer {admin_username} to subnet {subnet} failed: {e}")
+    
+    return {"message": "Admin peer connected to subnet"}
+
+@router.delete("/admin/disconnect", tags=["subnet","admin"])
+def admin_disconnect_peer_from_subnet(admin_username: str, subnet: str, _: Annotated[str, Depends(verify_token)]):
+    """
+    Removes a peer's admin status from a specific subnet.
+    """
+    with lock.write_lock(), state_manager.saved_state():
+        try:
+            peer: Peer = db.get_peer_by_username(admin_username)
+            if peer is None:
+                raise HTTPException(status_code=404, detail="Peer not found")
+
+            subnet_obj: Subnet = db.get_subnet_by_address(subnet)
+            if subnet_obj is None:
+                raise HTTPException(status_code=404, detail="Subnet not found")
+
+            db.remove_admin_link_from_peer_to_subnet(peer, subnet_obj)
+
+            # nftables: reverse what admin connect did
+            revoke_admin_peer_to_subnet(peer.address, subnet_obj.subnet)
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Disconnection of admin peer {admin_username} from subnet {subnet} failed: {e}")
+
+    return {"message": "Admin peer disconnected from subnet"}

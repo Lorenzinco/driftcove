@@ -341,17 +341,18 @@ class Database:
             raise Exception(f"An error occurred while removing link from peer to subnet: {e}")
         return
     
-    def get_peers_subnet(self,peer:Peer)->Subnet|None:
+    def get_peers_subnets(self,peer:Peer)->list[Subnet]:
         """
-        This function returns a subnet that a peer is part of.
-        It will return a Subnet object.
+        This function returns a list of subnets that a peer is part of.
         """
         try:
             subnets = self.get_subnets()
+            peer_subnets = []
             for subnet in subnets:
                 peer_ip_address = ipaddress.ip_address(peer.address)
                 if peer_ip_address in ipaddress.ip_network(subnet.subnet, strict=False):
-                    return subnet
+                    peer_subnets.append(subnet)
+            return peer_subnets
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting peers subnet: {e}")
         return None
@@ -872,3 +873,158 @@ class Database:
     def close(self):
         self.conn.close()
 
+
+    def add_admin_link_from_peer_to_subnet(self, peer: Peer, subnet: Subnet):
+        """
+        This function adds an admin link between a peer and a subnet.
+        It will create the entry in the admin_peers_subnets table, which is a many-to-many relationship between admin peers and subnets.
+        """
+        try:
+            self.conn.execute("""
+                INSERT INTO admin_peers_subnets (peer_id, subnet)
+                VALUES ((SELECT id FROM peers WHERE public_key = ?), ?)
+                ON CONFLICT(peer_id, subnet) DO NOTHING
+            """, (peer.public_key, subnet.subnet))
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while adding admin link from peer to subnet: {e}")
+        return
+    
+    def remove_admin_link_from_peer_to_subnet(self, peer: Peer, subnet: Subnet):
+        """
+        This function removes an admin link between a peer and a subnet.
+        It will delete the entry in the admin_peers_subnets table.
+        """
+        try:
+            self.conn.execute("""
+                DELETE FROM admin_peers_subnets WHERE peer_id = (SELECT id FROM peers WHERE public_key = ?) AND subnet = ?
+            """, (peer.public_key, subnet.subnet))
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while removing admin link from peer to subnet: {e}")
+        return
+
+    def get_admin_links_from_peer_to_subnets(self)->dict[str,list[Subnet]]:
+        """
+        This function returns dictionary with the peer's address as key and all the connected Subnets inside a list as value.
+        """
+        links = {}
+        try:
+            cur = self.conn.execute("""
+                SELECT p.username, p.public_key, p.preshared_key, p.address, p.x, p.y, s.subnet, s.name, s.description, s.x, s.y, s.width, s.height, s.rgba
+                FROM admin_peers_subnets ps
+                JOIN peers p ON ps.peer_id = p.id
+                JOIN subnets s ON ps.subnet = s.subnet
+            """)
+            links_rows = cur.fetchall()
+            for row in links_rows:
+                peer = Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5])
+                subnet = Subnet(subnet=row[6], name=row[7], description=row[8], x=row[9], y=row[10], width=row[11], height=row[12], rgba=row[13])
+                if peer.address not in links:
+                    links[peer.address] = []
+                links[peer.address].append(subnet)
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while getting admin links between peers and subnets: {e}")
+        return links
+    
+    def add_admin_subnet_to_subnet_link(self, subnet1: Subnet, subnet2: Subnet):
+        """
+        This function adds an admin link between two subnets.
+        It will create the entry in the admin_subnets_subnets table, which is a many-to-many relationship between admin subnets.
+        """
+        try:
+            self.conn.execute("""
+                INSERT INTO admin_subnets_subnets (subnet_one, subnet_two)
+                VALUES (?, ?)
+                ON CONFLICT(subnet_one, subnet_two) DO NOTHING
+            """, (subnet1.subnet, subnet2.subnet))
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while adding admin link between subnets: {e}")
+
+    def remove_admin_subnet_to_subnet_link(self, subnet1: Subnet, subnet2: Subnet):
+        """
+        This function removes an admin link between two subnets.
+        It will delete the entry in the admin_subnets_subnets table.
+        """
+        try:
+            self.conn.execute("""
+                DELETE FROM admin_subnets_subnets WHERE subnet_one = ? AND subnet_two = ?
+            """, (subnet1.subnet, subnet2.subnet))
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while removing admin link between subnets: {e}")
+        
+    def get_admin_links_from_subnet_to_subnet(self)->dict[str, list[Subnet]]:
+        """
+        This function returns a list of admin links between subnets.
+        It will return a dictionary with the subnet's address as key and all the connected Subnets inside a list as value.
+        """
+        links = {}
+        try:
+            cur = self.conn.execute("""
+                SELECT s1.subnet, s1.name, s1.description, s1.x, s1.y, s1.width, s1.height, s1.rgba,
+                       s2.subnet, s2.name, s2.description, s2.x, s2.y, s2.width, s2.height, s2.rgba
+                FROM admin_subnets_subnets ss
+                JOIN subnets s1 ON ss.subnet_one = s1.subnet
+                JOIN subnets s2 ON ss.subnet_two = s2.subnet
+            """)
+            links_rows = cur.fetchall()
+            for row in links_rows:
+                subnet1 = Subnet(subnet=row[0], name=row[1], description=row[2], x=row[3], y=row[4], width=row[5], height=row[6], rgba=row[7])
+                subnet2 = Subnet(subnet=row[8], name=row[9], description=row[10], x=row[11], y=row[12], width=row[13], height=row[14], rgba=row[15])
+                if subnet1.subnet not in links:
+                    links[subnet1.subnet] = []
+                links[subnet1.subnet].append(subnet2)
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while getting admin links between subnets: {e}")
+        return links
+    
+    def add_admin_link_from_peer_to_peer(self, peer1: Peer, peer2: Peer):
+        """
+        This function adds an admin link between two peers.
+        It will create the entry in the admin_peers_peers table, which is a many-to-many relationship between admin peers.
+        """
+        try:
+            self.conn.execute("""
+                INSERT INTO admin_peers_peers (peer_one_id, peer_two_id)
+                VALUES ((SELECT id FROM peers WHERE public_key = ?), (SELECT id FROM peers WHERE public_key = ?))
+                ON CONFLICT(peer_one_id, peer_two_id) DO NOTHING
+            """, (peer1.public_key, peer2.public_key))
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while adding admin link between peers: {e}")
+        
+    def remove_admin_link_from_peer_to_peer(self, peer1: Peer, peer2: Peer):
+        """
+        This function removes an admin link between two peers.
+        It will delete the entry in the admin_peers_peers table.
+        """
+        try:
+            self.conn.execute("""
+                DELETE FROM admin_peers_peers 
+                WHERE (peer_one_id = (SELECT id FROM peers WHERE public_key = ?) AND peer_two_id = (SELECT id FROM peers WHERE public_key = ?))
+                   OR (peer_one_id = (SELECT id FROM peers WHERE public_key = ?) AND peer_two_id = (SELECT id FROM peers WHERE public_key = ?))
+            """, (peer1.public_key, peer2.public_key, peer2.public_key, peer1.public_key))
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while removing admin link between peers: {e}")
+        
+    def get_admin_links_from_peer_to_peers(self)->dict[str, list[Peer]]:
+        """
+        This function returns a list of admin links between peers.
+        It will return a dictionary with the admin's address as key and all the connected Peers inside a list as value.
+        """
+        links = {}
+        try:
+            cur = self.conn.execute("""
+                SELECT p1.username, p1.public_key, p1.preshared_key, p1.address, p1.x, p1.y, 
+                       p2.username, p2.public_key, p2.preshared_key, p2.address, p2.x, p2.y
+                FROM admin_peers_peers pp
+                JOIN peers p1 ON pp.peer_one_id = p1.id
+                JOIN peers p2 ON pp.peer_two_id = p2.id
+            """)
+            links_rows = cur.fetchall()
+            for row in links_rows:
+                peer1 = Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5])
+                peer2 = Peer(username=row[6], public_key=row[7], preshared_key=row[8], address=row[9], x=row[10], y=row[11])
+                if peer1.address not in links:
+                    links[peer1.address] = []
+                links[peer1.address].append(peer2)
+        except sqlite3.Error as e:
+            raise Exception(f"An error occurred while getting admin links between peers: {e}")
+        return links

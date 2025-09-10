@@ -139,6 +139,35 @@ export const useNetworkStore = defineStore('network', {
                     let rgba = inc.rgba
                     if (rgba != null) rgba = (Number(rgba) >>> 0) & 0xFFFFFFFF
                     this.subnets.push({ id: inc.id, name: inc.name, cidr: inc.cidr, description: inc.description, x, y, width, height, rgba })
+                    // Snap existing peers without a subnet but whose IP falls inside this new subnet's CIDR
+                    try {
+                        const net = inc.cidr
+                        const [netBase, netBitsStr] = net.split('/')
+                        const netBits = parseInt(netBitsStr || '32', 10)
+                        const baseParts = netBase.split('.').map(n=>parseInt(n,10))
+                        if (baseParts.length === 4 && baseParts.every(n=> !isNaN(n) && n>=0 && n<256) && netBits>=0 && netBits<=32) {
+                            const mask = netBits === 0 ? 0 : (~0 << (32 - netBits)) >>> 0
+                            const baseInt = ((baseParts[0]<<24) | (baseParts[1]<<16) | (baseParts[2]<<8) | baseParts[3]) >>> 0
+                            const networkInt = baseInt & mask
+                            function ipToInt(ip:string){ const p=ip.split('.').map(q=>parseInt(q,10)); if(p.length!==4||p.some(x=>isNaN(x)||x<0||x>255)) return null; return ((p[0]<<24)|(p[1]<<16)|(p[2]<<8)|p[3])>>>0 }
+                            for (const peer of this.peers) {
+                                if (peer.subnetId) continue
+                                const ipInt = ipToInt(peer.ip || '')
+                                if (ipInt==null) continue
+                                if ((ipInt & mask) === networkInt) {
+                                    // Determine spot within subnet rectangle (with margin)
+                                    const margin = 60
+                                    const left = x - width/2 + margin
+                                    const right = x + width/2 - margin
+                                    const top = y - height/2 + margin
+                                    const bottom = y + height/2 - margin
+                                    peer.subnetId = inc.id
+                                    peer.x = left + Math.random() * (Math.max(1, right - left))
+                                    peer.y = top + Math.random() * (Math.max(1, bottom - top))
+                                }
+                            }
+                        }
+                    } catch { /* ignore snap errors */ }
                 }
             }
 
@@ -164,8 +193,27 @@ export const useNetworkStore = defineStore('network', {
                 if (existing.name !== incoming.name) existing.name = incoming.name
                 if (existing.ip !== incoming.ip) existing.ip = incoming.ip
                 if (existing.subnetId !== incoming.subnetId) {
+                    const prev = existing.subnetId
                     existing.subnetId = incoming.subnetId
-                    // DO NOT change x,y per requirement
+                    // If peer just gained a subnet (prev null) or is outside new subnet bounds, snap it inside.
+                    if (incoming.subnetId) {
+                        const s = this.subnets.find(s => s.id === incoming.subnetId)
+                        if (s) {
+                            const margin = 60
+                            const left = s.x - s.width/2 + margin
+                            const right = s.x + s.width/2 - margin
+                            const top = s.y - s.height/2 + margin
+                            const bottom = s.y + s.height/2 - margin
+                            const outOfBounds = !(
+                                existing.x >= left && existing.x <= right &&
+                                existing.y >= top && existing.y <= bottom
+                            )
+                            if (!prev || outOfBounds) {
+                                existing.x = left + Math.random() * (Math.max(1, right - left))
+                                existing.y = top + Math.random() * (Math.max(1, bottom - top))
+                            }
+                        }
+                    }
                 }
                 existing.services = incoming.services || {}
                 // Derive host only from services map (at least one service with numeric port)

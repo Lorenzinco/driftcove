@@ -46,7 +46,7 @@ export function createInteractions(getPeers:()=>Peer[], getSubnets:()=>Subnet[],
     }
     for (let i=links.length-1;i>=0;i--){
       const l = links[i];
-      if ((l as any).kind === 'membership' || (l as any).kind === 'subnet-service') {
+  if ((l as any).kind === 'membership' || (l as any).kind === 'subnet-service') {
         // Peer to subnet edge
         const peer:any = peers.find(p=> p.id===l.fromId) || peers.find(p=> p.id===l.toId);
         const subnet = subnets.find(s=> s.id===l.toId) || subnets.find(s=> s.id===l.fromId);
@@ -64,7 +64,7 @@ export function createInteractions(getPeers:()=>Peer[], getSubnets:()=>Subnet[],
         if (d <= threshold) return l;
         continue;
       }
-      if ((l as any).kind === 'subnet-subnet') {
+  if ((l as any).kind === 'subnet-subnet') {
         const sA = subnets.find(s=> s.id===l.fromId) || subnets.find(s=> s.id===l.toId);
         const sB = subnets.find(s=> s.id===l.toId) || subnets.find(s=> s.id===l.fromId);
         if (!sA || !sB) continue;
@@ -84,9 +84,23 @@ export function createInteractions(getPeers:()=>Peer[], getSubnets:()=>Subnet[],
         if (d <= threshold) return l;
         continue;
       }
-      const a = peers.find(p=>p.id===l.fromId); const b = peers.find(p=>p.id===l.toId); if (!a||!b) continue;
-      const d = distPointToSeg(pt.x, pt.y, a.x, a.y, b.x, b.y);
-      if (d <= threshold) return l;
+      if ((l as any).kind === 'admin-p2p') {
+        const a = peers.find(p=>p.id===l.fromId); const b = peers.find(p=>p.id===l.toId); if (!a||!b) continue;
+        const d = distPointToSeg(pt.x, pt.y, a.x, a.y, b.x, b.y); if (d <= threshold) return l; continue;
+      }
+      if ((l as any).kind === 'admin-peer-subnet') {
+        const peer = peers.find(p=>p.id===l.fromId); const subnet = subnets.find(s=> s.id===l.toId);
+        if (!peer || !subnet) continue;
+        const cx=subnet.x, cy=subnet.y, hw=subnet.width/2, hh=subnet.height/2; const vx=cx-peer.x, vy=cy-peer.y; let Bx=cx, By=cy; if (vx!==0||vy!==0){ const sx=Math.abs(vx)/(hw||1e-6), sy=Math.abs(vy)/(hh||1e-6); const t=Math.max(sx,sy)||1; Bx=cx - vx/t; By=cy - vy/t; }
+        const d = distPointToSeg(pt.x, pt.y, peer.x, peer.y, Bx, By); if (d <= threshold) return l; continue;
+      }
+      if ((l as any).kind === 'admin-subnet-subnet') {
+        const sA = subnets.find(s=> s.id===l.fromId); const sB = subnets.find(s=> s.id===l.toId); if (!sA||!sB) continue;
+        const cxA=sA.x, cyA=sA.y, hwA=sA.width/2, hhA=sA.height/2; const cxB=sB.x, cyB=sB.y, hwB=sB.width/2, hhB=sB.height/2; const vx=cxB-cxA, vy=cyB-cyA; let Ax=cxA, Ay=cyA, Bx=cxB, By=cyB; if (vx===0&&vy===0){ Ax=cxA+hwA; Ay=cyA; Bx=cxB-hwB; By=cyB; } else { const tA=Math.max(Math.abs(vx)/(hwA||1e-6), Math.abs(vy)/(hhA||1e-6))||1; Ax=cxA+vx/tA; Ay=cyA+vy/tA; const tB=Math.max(Math.abs(vx)/(hwB||1e-6), Math.abs(vy)/(hhB||1e-6))||1; Bx=cxB-vx/tB; By=cyB-vy/tB; }
+        const d=distPointToSeg(pt.x, pt.y, Ax, Ay, Bx, By); if (d<=threshold) return l; continue;
+      }
+      const a = peers.find(p=>p.id===l.fromId); const b = peers.find(p=>p.id===l.toId); if (!a||!b) continue; // regular p2p/service
+      const d = distPointToSeg(pt.x, pt.y, a.x, a.y, b.x, b.y); if (d <= threshold) return l;
     }
     return null;
   }

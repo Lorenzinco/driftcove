@@ -29,9 +29,9 @@ def create_service(service_name:str, department:str, username:str, port:int, _: 
             peer = db.get_peer_by_username(username)
             if peer is None:
                 raise HTTPException(status_code=404, detail=f"Peer {username} does not exist, to create a service, first create the peer and the assign the service to it.")
-            subnet = db.get_peers_subnet(peer)
-            if subnet is None:
-                raise HTTPException(status_code=404, detail="Peer is in a subnet that does not exist")
+            subnets = db.get_peers_subnets(peer)
+            if subnets is None or len(subnets) == 0:
+                raise HTTPException(status_code=404, detail="Peer is not in any subnet")
             service = Service(username=username,
                             public_key=peer.public_key,
                             preshared_key=peer.preshared_key,

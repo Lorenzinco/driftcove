@@ -103,7 +103,7 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 			try {
 				const { data } = await getClient().get<any>('/api/network/topology')
 				const rules = await this.getNftTableRules()
-				console.log(rules)
+				//console.log(rules)
 				const topo = data.topology || {}
 				const subnetsDict = topo.subnets || {}
 				const peersDict = topo.peers || {}
@@ -115,6 +115,10 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 				const subnetToSubnetDict: Record<string, any[]> = topo.subnet_to_subnet_links || {}
 				// Renamed backend field: now subnet_to_service_links (subnet -> [Service])
 				const subnetToServiceDict: Record<string, any[]> = topo.subnet_to_service_links || {}
+				// Admin directed link dicts
+				const adminPeerToPeer: Record<string, any[]> = topo.admin_peer_to_peer_links || {}
+				const adminPeerToSubnet: Record<string, any[]> = topo.admin_peer_to_subnet_links || {}
+				const adminSubnetToSubnet: Record<string, any[]> = topo.admin_subnet_to_subnet_links || {}
 				const networkDict: Record<string, any[]> = topo.network || {}
 
 				// Subnets
@@ -230,6 +234,38 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 						const hostPeer = peersMeta.find(p => p.services && p.services[svcName])
 						if (!hostPeer) continue
 						links.push({ id: `link_${linkCounter++}`, fromId: hostPeer.id, toId: sid, kind: 'subnet-service', serviceName: svcName })
+					}
+				}
+
+				// Admin directed links
+				// admin_peer_to_peer_links: key = source peer address, values = peer objects (targets)
+				for (const srcAddr of Object.keys(adminPeerToPeer)) {
+					const srcPeer = peersMeta.find(p => p.ip === srcAddr)
+					if (!srcPeer) continue
+					for (const tgt of adminPeerToPeer[srcAddr] || []) {
+						if (!tgt?.public_key) continue
+						const tgtPeer = peersMeta.find(p => p.publicKey === tgt.public_key)
+						if (!tgtPeer) continue
+						links.push({ id: `link_${linkCounter++}`, fromId: srcPeer.id, toId: tgtPeer.id, kind: 'admin-p2p' })
+					}
+				}
+				// admin_peer_to_subnet_links: key = source peer address, values = subnet objects (targets)
+				for (const srcAddr of Object.keys(adminPeerToSubnet)) {
+					const srcPeer = peersMeta.find(p => p.ip === srcAddr)
+					if (!srcPeer) continue
+					for (const tgt of adminPeerToSubnet[srcAddr] || []) {
+						const tgtCidr = tgt?.subnet || tgt?.cidr || (typeof tgt === 'string' ? tgt : null)
+						if (!tgtCidr) continue
+						// Ensure subnet exists (will by id=cidr) else skip
+						links.push({ id: `link_${linkCounter++}`, fromId: srcPeer.id, toId: tgtCidr, kind: 'admin-peer-subnet' })
+					}
+				}
+				// admin_subnet_to_subnet_links: key = source subnet cidr, values = subnet objects (targets)
+				for (const srcCidr of Object.keys(adminSubnetToSubnet)) {
+					for (const tgt of adminSubnetToSubnet[srcCidr] || []) {
+						const tgtCidr = tgt?.subnet || tgt?.cidr || (typeof tgt === 'string' ? tgt : null)
+						if (!tgtCidr || tgtCidr === srcCidr) continue
+						links.push({ id: `link_${linkCounter++}`, fromId: srcCidr, toId: tgtCidr, kind: 'admin-subnet-subnet' })
 					}
 				}
 
@@ -403,14 +439,26 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 		async connectPeerToSubnet(username: string, subnetCidr: string){
 			try { this.lastError=null; await getClient().post('/api/subnet/connect', null, { params:{ username, subnet: subnetCidr } }); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to connect peer to subnet'; return false }
 		},
+		async connectAdminPeerToSubnet(adminUsername: string, subnetCidr: string){
+			try { this.lastError=null; await getClient().post('/api/subnet/admin/connect', null, { params:{ admin_username: adminUsername, subnet: subnetCidr } }); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to connect admin peer to subnet'; return false }
+		},
 		async disconnectPeerFromSubnet(username: string, subnetCidr: string){
 			try { this.lastError=null; await getClient().delete('/api/subnet/disconnect', { params:{ username, subnet: subnetCidr } }); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to disconnect peer from subnet'; return false }
+		},
+		async disconnectAdminPeerFromSubnet(adminUsername: string, subnetCidr: string){
+			try { this.lastError=null; await getClient().delete('/api/subnet/admin/disconnect', { params:{ admin_username: adminUsername, subnet: subnetCidr } }); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to disconnect admin peer from subnet'; return false }
 		},
 		async connectPeers(peer1: string, peer2: string){
 			try { this.lastError=null; await getClient().post('/api/peer/connect', null, { params:{ peer1_username: peer1, peer2_username: peer2 }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to connect peers'; return false }
 		},
 		async disconnectPeers(peer1: string, peer2: string){
 			try { this.lastError=null; await getClient().delete('/api/peer/disconnect', { params:{ peer1_username: peer1, peer2_username: peer2 }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to disconnect peers'; return false }
+		},
+		async connectAdminPeerToPeer(adminUsername: string, peerUsername: string){
+			try { this.lastError=null; await getClient().post('/api/peer/admin/peer/connect', null, { params:{ admin_username: adminUsername, peer_username: peerUsername }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to create admin peer link'; return false }
+		},
+		async disconnectAdminPeerFromPeer(adminUsername: string, peerUsername: string){
+			try { this.lastError=null; await getClient().delete('/api/peer/admin/peer/disconnect', { params:{ admin_username: adminUsername, peer_username: peerUsername }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to remove admin peer link'; return false }
 		},
 		async connectPeerToService(username: string, serviceName: string){
 			try { this.lastError=null; await getClient().post('/api/service/connect', null, { params:{ username, service_name: serviceName }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to connect peer to service'; return false }
@@ -421,8 +469,15 @@ export const useBackendInteractionStore = defineStore('backendInteraction', {
 		async connectSubnetToSubnet(subnetA: string, subnetB: string){
 			try { this.lastError=null; await getClient().post('/api/network/subnets/connect', null, { params:{ subnet_a: subnetA, subnet_b: subnetB }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to connect subnets'; return false }
 		},
+		async connectAdminSubnetToSubnet(adminSubnet: string, subnet: string){
+			// Directed (adminSubnet -> subnet) admin privilege link
+			try { this.lastError=null; await getClient().post('/api/network/admin/connect_subnets', null, { params:{ admin_subnet: adminSubnet, subnet }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to connect admin subnets'; return false }
+		},
 		async disconnectSubnetFromSubnet(subnetA: string, subnetB: string){
 			try { this.lastError=null; await getClient().delete('/api/network/subnets/connect', { params:{ subnet_a: subnetA, subnet_b: subnetB }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to disconnect subnets'; return false }
+		},
+		async disconnectAdminSubnetFromSubnet(adminSubnet: string, subnet: string){
+			try { this.lastError=null; await getClient().delete('/api/network/admin/disconnect_subnets', { params:{ admin_subnet: adminSubnet, subnet }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to disconnect admin subnet link'; return false }
 		},
 		async connectSubnetToService(subnetCidr: string, serviceName: string){
 			try { this.lastError=null; await getClient().post('/api/service/subnet/connect', null, { params:{ subnet_address: subnetCidr, service_name: serviceName }}); await this.fetchTopology(true); return true } catch(e:any){ this.lastError = e?.message || 'Failed to connect subnet to service'; return false }

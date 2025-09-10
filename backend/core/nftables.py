@@ -72,6 +72,7 @@ def ensure_table_and_chain(wg_if: str = "wg0", wg_server_ip: str = "10.128.0.1")
     # Chains
     _nft_try('add chain inet dcv input   { type filter hook input   priority 0; policy accept; }')
     _nft_try('add chain inet dcv forward { type filter hook forward priority 0; policy accept; }')
+    _nft_try('add chain inet dcv fwd_est')   # <--- NEW: holds all EST/REL rules
     _nft_try('add chain inet dcv wg')
     _nft_try('add chain inet dcv wg_base')
     _nft_try('add chain inet dcv wg_allow')
@@ -81,31 +82,32 @@ def ensure_table_and_chain(wg_if: str = "wg0", wg_server_ip: str = "10.128.0.1")
     _nft_try('add rule inet dcv input ct state established,related accept')
     _nft_try(f'add rule inet dcv input iifname "{wg_if}" ip daddr {wg_server_ip} icmp type echo-request accept')
 
-    # FORWARD
+    # FORWARD (static order)
     _nft_try('flush chain inet dcv forward')
     _nft_try('add rule inet dcv forward ip saddr . ip daddr @blocked_pairs drop')  # panic drop
-
-    # Constrained EST/REL acceptance by original tuple
-    _nft_try('add rule inet dcv forward ct state established,related '
-             'ct original ip saddr . ct original ip daddr @admin_peer2cidr accept')
-    _nft_try('add rule inet dcv forward ct state established,related '
-             'ct original ip saddr . ct original ip daddr @admin_links accept')
-    _nft_try('add rule inet dcv forward ct state established,related '
-             'ct original ip saddr . ct original ip daddr @p2p_links accept')
-    _nft_try('add rule inet dcv forward ct state established,related '
-             'ct original ip saddr . ct original ip daddr @svc_pairs accept')
-
-    # steer wg traffic to pipeline
-    _nft_try(f'add rule inet dcv forward iifname "{wg_if}" goto wg')
+    _nft_try('add rule inet dcv forward jump fwd_est')                             # always before wg
+    _nft_try(f'add rule inet dcv forward iifname "{wg_if}" goto wg')               # footer stays last
     _nft_try(f'add rule inet dcv forward oifname "{wg_if}" goto wg')
 
+    # FWD_EST (constrained EST/REL acceptance by original tuple)
+    _nft_try('flush chain inet dcv fwd_est')
+    _nft_try('add rule inet dcv fwd_est ct state established,related '
+             'ct original ip saddr . ct original ip daddr @admin_peer2cidr accept')
+    _nft_try('add rule inet dcv fwd_est ct state established,related '
+             'ct original ip saddr . ct original ip daddr @admin_links accept')
+    _nft_try('add rule inet dcv fwd_est ct state established,related '
+             'ct original ip saddr . ct original ip daddr @p2p_links accept')
+    _nft_try('add rule inet dcv fwd_est ct state established,related '
+             'ct original ip saddr . ct original ip daddr @svc_pairs accept')
+
     # WG pipeline
+    # base -> allow -> drop
     _nft_try('flush chain inet dcv wg')
     _nft_try('add rule inet dcv wg jump wg_base')
     _nft_try('add rule inet dcv wg jump wg_allow')
-    _nft_try('add rule inet dcv wg counter reject with icmpx type admin-prohibited')
+    _nft_try('add rule inet dcv wg counter drop')
 
-    # NEW acceptance (set-based)
+    # NEW acceptance (set-based) — only NEW goes here
     _nft_try('flush chain inet dcv wg_base')
     _nft_try('add rule inet dcv wg_base ip saddr . ip daddr @admin_peer2cidr ct state new accept')
     _nft_try('add rule inet dcv wg_base ip saddr . ip daddr @admin_links   ct state new accept')
@@ -139,13 +141,13 @@ def ensure_subnet(subnet_id: str) -> None:
     _nft_try(f"add set inet dcv {members} {{ type ipv4_addr; flags interval; }}")
     _nft_try(f"add set inet dcv {public}  {{ type ipv4_addr; flags interval; }}")
 
-    # NEW acceptance rule
+    # NEW acceptance rule (wg_allow)
     _delete_rule_by_match("wg_allow", rf"ip saddr @{members} ip daddr @{public} ct state new accept")
     _nft_try(f"add rule inet dcv wg_allow ip saddr @{members} ip daddr @{public} ct state new accept")
 
-    # EST acceptance matching the same relation (so replies flow)
-    _delete_rule_by_match("forward", rf"ct original ip saddr @{members} ct original ip daddr @{public} accept")
-    _nft_try(f"add rule inet dcv forward ct state established,related "
+    # EST acceptance matching the same relation (so replies flow) -> fwd_est
+    _delete_rule_by_match("fwd_est", rf"ct original ip saddr @{members} ct original ip daddr @{public} accept")
+    _nft_try(f"add rule inet dcv fwd_est ct state established,related "
              f"ct original ip saddr @{members} ct original ip daddr @{public} accept")
 
 def destroy_subnet(subnet_id: str) -> None:
@@ -154,7 +156,7 @@ def destroy_subnet(subnet_id: str) -> None:
     public  = f"subnet_{s}_public"
 
     _delete_rule_by_match("wg_allow", rf"ip saddr @{members} ip daddr @{public} ct state new accept")
-    _delete_rule_by_match("forward",  rf"ct original ip saddr @{members} ct original ip daddr @{public} accept")
+    _delete_rule_by_match("fwd_est",  rf"ct original ip saddr @{members} ct original ip daddr @{public} accept")
     _nft_try(f"delete set inet dcv {members}")
     _nft_try(f"delete set inet dcv {public}")
 
@@ -201,7 +203,7 @@ def grant_subnet_service(subnet_id: str, dst_ip: str, port: int):
     s = _slug(subnet_id)
     members = f"subnet_{s}_members"
 
-    # NEW acceptance
+    # NEW acceptance (wg_allow)
     _delete_rule_by_match("wg_allow",
         rf"meta l4proto \{{ tcp, udp \}} ip saddr @{members} ip daddr {dst_ip} th dport {port} ct state new accept")
     _nft_try(
@@ -209,11 +211,11 @@ def grant_subnet_service(subnet_id: str, dst_ip: str, port: int):
         f"ip saddr @{members} ip daddr {dst_ip} th dport {port} ct state new accept"
     )
 
-    # EST acceptance for replies of that relation
-    _delete_rule_by_match("forward",
+    # EST acceptance (fwd_est)
+    _delete_rule_by_match("fwd_est",
         rf"ct original ip saddr @{members} ct original ip daddr {dst_ip} accept")
     _nft_try(
-        f"add rule inet dcv forward ct state established,related "
+        f"add rule inet dcv fwd_est ct state established,related "
         f"ct original ip saddr @{members} ct original ip daddr {dst_ip} accept"
     )
 
@@ -222,7 +224,7 @@ def revoke_subnet_service(subnet_id: str, dst_ip: str, port: int):
     members = f"subnet_{s}_members"
     _delete_rule_by_match("wg_allow",
         rf"meta l4proto \{{ tcp, udp \}} ip saddr @{members} ip daddr {dst_ip} th dport {port} ct state new accept")
-    _delete_rule_by_match("forward",
+    _delete_rule_by_match("fwd_est",
         rf"ct original ip saddr @{members} ct original ip daddr {dst_ip} accept")
 
 # ------------- Subnet ↔ Subnet links (rule-based) -------------
@@ -231,24 +233,27 @@ def connect_subnet_to_subnet_public(src_subnet_id: str, dst_subnet_id: str) -> N
     s = _slug(src_subnet_id); d = _slug(dst_subnet_id)
     src_members = f"subnet_{s}_members"; dst_public = f"subnet_{d}_public"
 
-    # NEW acceptance
+    # NEW acceptance (wg_allow)
     _delete_rule_by_match("wg_allow", rf"ip saddr @{src_members} ip daddr @{dst_public} ct state new accept")
     _nft_try(f"add rule inet dcv wg_allow ip saddr @{src_members} ip daddr @{dst_public} ct state new accept")
 
-    # EST acceptance for replies
-    _delete_rule_by_match("forward",
+    # EST acceptance (fwd_est)
+    _delete_rule_by_match("fwd_est",
         rf"ct original ip saddr @{src_members} ct original ip daddr @{dst_public} accept")
-    _nft_try(f"add rule inet dcv forward ct state established,related "
+    _nft_try(f"add rule inet dcv fwd_est ct state established,related "
              f"ct original ip saddr @{src_members} ct original ip daddr @{dst_public} accept")
 
 def disconnect_subnet_from_subnet_public(src_subnet_id: str, dst_subnet_id: str) -> None:
     s = _slug(src_subnet_id); d = _slug(dst_subnet_id)
     src_members = f"subnet_{s}_members"; dst_public = f"subnet_{d}_public"
     _delete_rule_by_match("wg_allow", rf"ip saddr @{src_members} ip daddr @{dst_public} ct state new accept")
-    _delete_rule_by_match("forward",
+    _delete_rule_by_match("fwd_est",
         rf"ct original ip saddr @{src_members} ct original ip daddr @{dst_public} accept")
 
 def connect_subnets_bidirectional_public(subnet_a: str, subnet_b: str) -> None:
+    # idempotent safety
+    ensure_subnet(subnet_a)
+    ensure_subnet(subnet_b)
     connect_subnet_to_subnet_public(subnet_a, subnet_b)
     connect_subnet_to_subnet_public(subnet_b, subnet_a)
 
@@ -276,38 +281,38 @@ def grant_admin_subnet_to_peer(src_subnet_id: str, dst_ip: str) -> None:
     s = _slug(src_subnet_id)
     members = f"subnet_{s}_members"
 
-    # NEW acceptance
+    # NEW acceptance (wg_allow)
     _delete_rule_by_match("wg_allow", rf"ip saddr @{members} ip daddr {dst_ip} ct state new accept")
     _nft_try(f"add rule inet dcv wg_allow ip saddr @{members} ip daddr {dst_ip} ct state new accept")
 
-    # EST acceptance
-    _delete_rule_by_match("forward", rf"ct original ip saddr @{members} ct original ip daddr {dst_ip} accept")
-    _nft_try(f"add rule inet dcv forward ct state established,related "
+    # EST acceptance (fwd_est)
+    _delete_rule_by_match("fwd_est", rf"ct original ip saddr @{members} ct original ip daddr {dst_ip} accept")
+    _nft_try(f"add rule inet dcv fwd_est ct state established,related "
              f"ct original ip saddr @{members} ct original ip daddr {dst_ip} accept")
 
 def revoke_admin_subnet_to_peer(src_subnet_id: str, dst_ip: str) -> None:
     s = _slug(src_subnet_id)
     members = f"subnet_{s}_members"
     _delete_rule_by_match("wg_allow", rf"ip saddr @{members} ip daddr {dst_ip} ct state new accept")
-    _delete_rule_by_match("forward",  rf"ct original ip saddr @{members} ct original ip daddr {dst_ip} accept")
+    _delete_rule_by_match("fwd_est",  rf"ct original ip saddr @{members} ct original ip daddr {dst_ip} accept")
 
 def grant_admin_subnet_to_subnet(src_subnet_id: str, dst_subnet_id: str) -> None:
     s = _slug(src_subnet_id); d = _slug(dst_subnet_id)
     src_members = f"subnet_{s}_members"; dst_members = f"subnet_{d}_members"
 
-    # NEW acceptance
+    # NEW acceptance (wg_allow)
     _delete_rule_by_match("wg_allow", rf"ip saddr @{src_members} ip daddr @{dst_members} ct state new accept")
     _nft_try(f"add rule inet dcv wg_allow ip saddr @{src_members} ip daddr @{dst_members} ct state new accept")
 
-    # EST acceptance
-    _delete_rule_by_match("forward",
+    # EST acceptance (fwd_est)
+    _delete_rule_by_match("fwd_est",
         rf"ct original ip saddr @{src_members} ct original ip daddr @{dst_members} accept")
-    _nft_try(f"add rule inet dcv forward ct state established,related "
+    _nft_try(f"add rule inet dcv fwd_est ct state established,related "
              f"ct original ip saddr @{src_members} ct original ip daddr @{dst_members} accept")
 
 def revoke_admin_subnet_to_subnet(src_subnet_id: str, dst_subnet_id: str) -> None:
     s = _slug(src_subnet_id); d = _slug(dst_subnet_id)
     src_members = f"subnet_{s}_members"; dst_members = f"subnet_{d}_members"
     _delete_rule_by_match("wg_allow", rf"ip saddr @{src_members} ip daddr @{dst_members} ct state new accept")
-    _delete_rule_by_match("forward",
+    _delete_rule_by_match("fwd_est",
         rf"ct original ip saddr @{src_members} ct original ip daddr @{dst_members} accept")

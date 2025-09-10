@@ -125,11 +125,13 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
 
   function drawLinks(ctx:CanvasRenderingContext2D, ts:number){
   const { links, peers, subnets, ui } = deps();
+  // Exclude admin links from aggregation; they are rendered separately with direction.
+  const regularLinks = links.filter(l => (l as any).kind !== 'admin-p2p' && (l as any).kind !== 'admin-peer-subnet' && (l as any).kind !== 'admin-subnet-subnet');
   // frame increment moved to draw() so all passes share same timing
     interface Agg { a: Peer; b: Peer; p2p: boolean; services: Set<string>; serviceHostId?: string; linkIds: string[]; repId: string }
     const byPair: Record<string, Agg> = {};
     function pairKey(aId:string,bId:string){ return aId < bId ? `${aId}::${bId}` : `${bId}::${aId}`; }
-    for (const l of links){
+  for (const l of regularLinks){
       if (l.kind==='membership' || l.kind==='subnet-subnet' || l.kind==='subnet-service') continue;
       const a = peers.find(p=>p.id===l.fromId); const b = peers.find(p=>p.id===l.toId); if (!a||!b) continue;
       const key = pairKey(a.id,b.id);
@@ -183,6 +185,99 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       }
     }
     ctx.restore(); if (anyAnim && invalidateFn) requestAnimationFrame(()=> invalidateFn && invalidateFn());
+  }
+
+  // Admin directed links with lens-on-hover animation
+  function drawAdminLinks(ctx:CanvasRenderingContext2D){
+    const { links, peers, subnets, ui } = deps();
+    let anyAnim = false;
+    const lensPulse = (Math.sin(frame/25)+1)/2; // 0..1
+    for (const l of links){
+      const kind = (l as any).kind;
+      if (kind !== 'admin-p2p' && kind !== 'admin-peer-subnet' && kind !== 'admin-subnet-subnet') continue;
+      // Resolve endpoints in world space (peer center or subnet boundary)
+      let Ax=0, Ay=0, Bx=0, By=0; let valid=true;
+      if (kind === 'admin-p2p') {
+        const a = peers.find(p=>p.id===l.fromId); const b = peers.find(p=>p.id===l.toId); if (!a||!b){ valid=false; }
+        else { Ax=a.x; Ay=a.y; Bx=b.x; By=b.y; }
+      } else if (kind === 'admin-peer-subnet') {
+        const peer = peers.find(p=>p.id===l.fromId); const subnet = subnets.find(s=> s.id===l.toId) || subnets.find(s=> s.id===l.fromId);
+        if (!peer || !subnet){ valid=false; }
+        else {
+          Ax = peer.x; Ay = peer.y; // origin peer
+          // target point: intersection of ray center->peer? Actually direction is peer -> subnet center boundary towards center
+          const cx=subnet.x, cy=subnet.y, hw=subnet.width/2, hh=subnet.height/2; const vx=cx-peer.x, vy=cy-peer.y;
+          let t=1; if (vx!==0||vy!==0){ const sx=Math.abs(vx)/(hw||1e-6), sy=Math.abs(vy)/(hh||1e-6); t=Math.max(sx,sy)||1; }
+          Bx = cx - vx/t; By = cy - vy/t; // boundary point entering subnet
+        }
+      } else if (kind === 'admin-subnet-subnet') {
+        const sA = subnets.find(s=> s.id===l.fromId); const sB = subnets.find(s=> s.id===l.toId); if (!sA||!sB){ valid=false; }
+        else {
+          const cxA=sA.x, cyA=sA.y, hwA=sA.width/2, hhA=sA.height/2; const cxB=sB.x, cyB=sB.y, hwB=sB.width/2, hhB=sB.height/2; const vx=cxB-cxA, vy=cyB-cyA;
+          let Axw=cxA, Ayw=cyA, Bxw=cxB, Byw=cyB;
+          if (vx===0 && vy===0){ Axw=cxA+hwA; Ayw=cyA; Bxw=cxB-hwB; Byw=cyB; }
+          else { const tA=Math.max(Math.abs(vx)/(hwA||1e-6), Math.abs(vy)/(hhA||1e-6))||1; Axw=cxA+vx/tA; Ayw=cyA+vy/tA; const tB=Math.max(Math.abs(vx)/(hwB||1e-6), Math.abs(vy)/(hhB||1e-6))||1; Bxw=cxB-vx/tB; Byw=cyB-vy/tB; }
+          Ax=Axw; Ay=Ayw; Bx=Bxw; By=Byw;
+        }
+      }
+      if (!valid) continue;
+      const A = toScreen(Ax,Ay); const B = toScreen(Bx,By);
+      const active = ui?.hoverLinkId === (l as any).id || ui?.hoverPeerId === l.fromId || ui?.hoverSubnetId === l.fromId;
+      // Determine styling differences
+      let strokeStyle = 'rgba(255,255,255,0.25)';
+      let dash: number[] | null = null;
+      if (kind === 'admin-subnet-subnet') {
+        const srcSubnet = subnets.find(s=> s.id===l.fromId);
+        if (srcSubnet && typeof (srcSubnet as any).rgba === 'number') {
+          const raw = (srcSubnet as any).rgba; const r=(raw>>24)&0xFF, g=(raw>>16)&0xFF, b=(raw>>8)&0xFF; strokeStyle = `rgba(${r},${g},${b},1)`;
+        } else strokeStyle = '#7CF29A';
+        dash = [10,6];
+      } else if (kind === 'admin-peer-subnet') {
+        strokeStyle = 'rgba(180,180,180,0.65)';
+        dash = [6,5];
+      }
+      // Base directed line
+      ctx.save();
+      ctx.lineWidth = 2; ctx.strokeStyle = strokeStyle;
+      if (dash) ctx.setLineDash(dash);
+      ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke();
+      if (dash) ctx.setLineDash([]);
+      // Direction arrow head (static subtle)
+      const dx=B.x-A.x, dy=B.y-A.y; const len=Math.hypot(dx,dy)||1; const ux=dx/len, uy=dy/len;
+      const ah = 8*deps().panzoom.zoom; const aw = 5*deps().panzoom.zoom;
+      ctx.beginPath(); ctx.moveTo(B.x, B.y); ctx.lineTo(B.x - ux*ah + -uy*aw, B.y - uy*ah + ux*aw); ctx.lineTo(B.x - ux*ah + uy*aw, B.y - uy*ah - ux*aw); ctx.closePath(); ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.fill();
+  if (active){
+        anyAnim = true;
+        // Lens animation: traveling magnifier circle from origin to target.
+        const t = (frame/90)%1; // slow travel
+        const px = A.x + dx * t; const py = A.y + dy * t;
+        const radius = 10 * deps().panzoom.zoom * (0.75 + 0.35 * lensPulse);
+        // Lens glass
+        ctx.save(); ctx.beginPath(); ctx.arc(px, py, radius, 0, Math.PI*2); ctx.fillStyle='rgba(80,160,255,0.15)'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle='rgba(120,190,255,0.9)'; ctx.stroke();
+        // Light sweep highlight
+        const grad = ctx.createRadialGradient(px - radius*0.3, py - radius*0.3, radius*0.1, px, py, radius);
+        grad.addColorStop(0,'rgba(255,255,255,0.6)'); grad.addColorStop(0.4,'rgba(255,255,255,0.15)'); grad.addColorStop(1,'rgba(255,255,255,0)');
+        ctx.globalCompositeOperation='lighter'; ctx.beginPath(); ctx.arc(px,py,radius,0,Math.PI*2); ctx.fillStyle=grad; ctx.fill(); ctx.globalCompositeOperation='source-over';
+        // Focused segment (magnified) under lens: redraw a thicker sub segment inside circle
+        ctx.save(); ctx.beginPath(); ctx.arc(px,py,radius*0.9,0,Math.PI*2); ctx.clip(); ctx.lineWidth=4; ctx.strokeStyle='rgba(160,220,255,0.9)'; ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke(); ctx.restore();
+        ctx.restore();
+        // Hover label for admin peer->peer links (shadowed box like regular link labels)
+        if (kind === 'admin-p2p' || kind === 'admin-subnet-subnet' || kind === 'admin-peer-subnet') {
+          const mx = (A.x + B.x) / 2; const my = (A.y + B.y) / 2;
+          const label = 'admin';
+          ctx.save(); ctx.font='600 12px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+          const padX=8, padY=6; const textW = ctx.measureText(label).width; const boxW = textW + padX*2; const boxH = 14 + padY*2;
+          ctx.beginPath(); (ctx as any).roundRect?.(mx - boxW/2, my - boxH/2, boxW, boxH, 5);
+          ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fill();
+          if (kind==='admin-subnet-subnet') ctx.strokeStyle=strokeStyle; else if (kind==='admin-peer-subnet') ctx.strokeStyle='rgba(180,180,180,0.9)'; else ctx.strokeStyle='rgba(120,190,255,0.9)';
+          ctx.lineWidth=1; ctx.stroke();
+          ctx.fillStyle='#fff'; ctx.fillText(label, mx, my);
+          ctx.restore();
+        }
+      }
+      ctx.restore();
+    }
+    if (anyAnim && invalidateFn) requestAnimationFrame(()=> invalidateFn && invalidateFn());
   }
 
   function drawMembershipLinks(ctx:CanvasRenderingContext2D){
@@ -385,6 +480,37 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       ctx.font = `${9*z}px Roboto, sans-serif`; ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('!', x, y+0.5*z);
       ctx.restore();
     }
+    function drawCrownBadge(x:number,y:number,z:number){
+  // Wider + flatter crown: base bar + 3 lower peaks
+  const w = 24 * z; const h = 8 * z; const peakH = 4.5 * z; const radius = 2.5 * z;
+      ctx.save();
+      ctx.translate(x - w/2, y - h - peakH);
+      // Shadow / outline
+      ctx.beginPath();
+      ctx.moveTo(0, h+peakH);
+  ctx.lineTo(0, peakH+radius*0.6);
+  // Left peak (short)
+  ctx.lineTo(w*0.22, peakH*0.55);
+  ctx.lineTo(w*0.36, peakH+radius*0.2);
+  // Middle peak (taller but still flat)
+  ctx.lineTo(w*0.5, peakH*0.05);
+  ctx.lineTo(w*0.64, peakH+radius*0.2);
+  // Right peak (short)
+  ctx.lineTo(w*0.78, peakH*0.55);
+  ctx.lineTo(w, peakH+radius*0.6);
+      ctx.lineTo(w, h+peakH);
+      ctx.closePath();
+      ctx.fillStyle = '#f1c40f';
+      ctx.strokeStyle = '#b58500';
+      ctx.lineWidth = 1.5 * z;
+      ctx.fill(); ctx.stroke();
+      // Base jewels
+  const jewelY = peakH + h*0.4;
+  const jewels = [w*0.23, w*0.5, w*0.77];
+  ctx.fillStyle = '#ffffffd0';
+  for (const jx of jewels){ ctx.beginPath(); ctx.arc(jx, jewelY, 1.1*z, 0, Math.PI*2); ctx.fill(); }
+      ctx.restore();
+    }
     // Build set of peers having at least one non-membership link (p2p/service) — retained in case future styling needs it.
     const nonMembershipLinked = new Set<string>();
     for (const l of links as Link[]) {
@@ -395,7 +521,9 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
     for (const n of peers){
       const S = toScreen(n.x, n.y);
       const isHost = n.services && Object.keys(n.services).length>0; // Host = has at least one service
-      const last = (n as any).lastHandshake || 0; const nowSec = Date.now()/1000; const connected = (nowSec - last) < 300; // 5 minutes
+  const last = (n as any).lastHandshake || 0; const nowSec = Date.now()/1000; let connected = (nowSec - last) < 300; // 5 minutes
+  const isMaster = n.name === 'master';
+  if (isMaster) connected = true; // Master is always online
       const isPublic = !!((n as any).public); // membership to its own subnet
       const stroke = connected ? peerColor : '#888';
       const fill = connected ? 'rgba(85, 148, 165, 1)' : 'rgba(90, 90, 90, 1)';
@@ -464,6 +592,10 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
           ctx.font='500 12px Roboto, sans-serif'; ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fillText(ipText, bx + padX, by + padY + lineH + 2 + lineH/2);
           ctx.restore();
         }
+        if (isMaster){
+          // Draw crown above top of host icon
+          drawCrownBadge(S.x, topY - 4*z, z);
+        }
       } else {
         // Original monitor client icon
         const monitorW = 46 * z;
@@ -520,6 +652,10 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
           ctx.font='500 12px Roboto, sans-serif'; ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fillText(ipText, bx + padX, by + padY + lineH + 2 + lineH/2);
           ctx.restore();
         }
+        if (isMaster){
+          // For client icon, y0 is top of monitor area
+          drawCrownBadge(S.x, y0 - 4*z, z);
+        }
       }
     }
   }
@@ -564,6 +700,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   if (lastTs===0) lastTs = now;
   // Advance shared animation frame for all passes
   frame += (now - lastTs) * 0.06; lastTs = now;
+  drawAdminLinks(ctx); // draw first so regular links labels sit above if overlapping
   drawLinks(ctx, now);
   drawSubnetSubnetLinks(ctx);
     drawMembershipLinks(ctx);

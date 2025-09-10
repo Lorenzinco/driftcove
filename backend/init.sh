@@ -69,6 +69,7 @@ nft 'add set inet dcv blocked_pairs   { type ipv4_addr . ipv4_addr; flags interv
 # Chains (idempotent)
 nft 'add chain inet dcv input   { type filter hook input   priority 0; policy accept; }' 2>/dev/null || true
 nft 'add chain inet dcv forward { type filter hook forward priority 0; policy accept; }' 2>/dev/null || true
+nft 'add chain inet dcv fwd_est'   2>/dev/null || true   # <-- NEW: holds EST/REL rules
 nft 'add chain inet dcv wg'        2>/dev/null || true
 nft 'add chain inet dcv wg_base'   2>/dev/null || true
 nft 'add chain inet dcv wg_allow'  2>/dev/null || true
@@ -82,28 +83,32 @@ nft "add rule inet dcv input iifname \"${WG_IF}\" ip daddr ${WG_ADDRESS_CIDR%%/*
 # (optional) SSH on wg interface:
 # nft "add rule inet dcv input iifname \"${WG_IF}\" ip daddr ${WG_ADDRESS_CIDR%%/*} tcp dport 22 accept" 2>/dev/null || true
 
-# --- FORWARD (peer↔peer / peer↔services) ---
+# --- FORWARD (static: drop -> jump fwd_est -> goto wg) ---
 nft 'flush chain inet dcv forward' 2>/dev/null || true
 
 # 0) Immediate hard drop for blocked pairs (cuts live regardless of conntrack)
 nft 'add rule inet dcv forward ip saddr . ip daddr @blocked_pairs drop' 2>/dev/null || true
 
-# 1) Constrained EST/REL fast-path (NOTE: explicit ip family after "ct original")
-nft 'add rule inet dcv forward ct state established,related ct original ip saddr . ct original ip daddr @admin_peer2cidr accept' 2>/dev/null || true
-nft 'add rule inet dcv forward ct state established,related ct original ip saddr . ct original ip daddr @admin_links     accept' 2>/dev/null || true
-nft 'add rule inet dcv forward ct state established,related ct original ip saddr . ct original ip daddr @p2p_links       accept' 2>/dev/null || true
-# For services: accept established by src/dst pair (port was enforced at NEW via svc_guest)
-nft 'add rule inet dcv forward ct state established,related ct original ip saddr . ct original ip daddr @svc_pairs       accept' 2>/dev/null || true
+# 1) Constrained EST/REL lives in fwd_est (jump there)
+nft 'add rule inet dcv forward jump fwd_est' 2>/dev/null || true
 
-# 2) Hook only WG traffic into wg chain
+# 2) Hook only WG traffic into wg chain (leave these LAST)
 nft "add rule inet dcv forward iifname \"${WG_IF}\" goto wg" 2>/dev/null || true
 nft "add rule inet dcv forward oifname \"${WG_IF}\" goto wg" 2>/dev/null || true
 
-# --- wg dispatch: base -> allow -> reject ---
+# --- FWD_EST: constrained EST/REL acceptance by original tuple ---
+nft 'flush chain inet dcv fwd_est' 2>/dev/null || true
+nft 'add rule inet dcv fwd_est ct state established,related ct original ip saddr . ct original ip daddr @admin_peer2cidr accept' 2>/dev/null || true
+nft 'add rule inet dcv fwd_est ct state established,related ct original ip saddr . ct original ip daddr @admin_links     accept' 2>/dev/null || true
+nft 'add rule inet dcv fwd_est ct state established,related ct original ip saddr . ct original ip daddr @p2p_links       accept' 2>/dev/null || true
+# For services: accept established by src/dst pair (port was enforced at NEW via svc_guest)
+nft 'add rule inet dcv fwd_est ct state established,related ct original ip saddr . ct original ip daddr @svc_pairs       accept' 2>/dev/null || true
+
+# --- wg dispatch: base -> allow -> drop ---
 nft 'flush chain inet dcv wg' 2>/dev/null || true
 nft 'add rule inet dcv wg jump wg_base' 2>/dev/null || true
 nft 'add rule inet dcv wg jump wg_allow' 2>/dev/null || true
-nft 'add rule inet dcv wg counter reject with icmpx type admin-prohibited' 2>/dev/null || true
+nft 'add rule inet dcv wg counter drop' 2>/dev/null || true
 
 # --- wg_base: NEW accepts from sets ---
 nft 'flush chain inet dcv wg_base' 2>/dev/null || true
@@ -112,9 +117,7 @@ nft 'add rule inet dcv wg_base ip saddr . ip daddr @admin_links   ct state new a
 nft 'add rule inet dcv wg_base ip saddr . ip daddr @p2p_links     ct state new accept' 2>/dev/null || true
 nft 'add rule inet dcv wg_base meta l4proto { tcp, udp } ip saddr . ip daddr . th dport @svc_guest ct state new accept' 2>/dev/null || true
 
-# --- wg_allow: (left empty here)
-# Your backend will add per-subnet/per-link NEW rules, and we’ll rely on the
-# matching EST/REL rules added above (using ct original ip …) to keep replies flowing.
+# --- wg_allow: NEW rule bucket (left empty here; backend adds per-subnet/per-link NEW rules) ---
 nft 'flush chain inet dcv wg_allow' 2>/dev/null || true
 
 # --- NAT table: masquerade WG subnet out of WAN_IF ---
@@ -123,6 +126,7 @@ nft 'add chain ip nat prerouting  { type nat hook prerouting  priority -100; }' 
 nft 'add chain ip nat postrouting { type nat hook postrouting priority  100; }' 2>/dev/null || true
 nft "delete rule ip nat postrouting oifname \"${WAN_IF}\" ip saddr ${WG_DEFAULT_SUBNET} counter masquerade" 2>/dev/null || true
 nft "add rule ip nat postrouting oifname \"${WAN_IF}\" ip saddr ${WG_DEFAULT_SUBNET} counter masquerade"
+
 
 
 echo "[init] Ensuring sqlite db folder..."
@@ -134,6 +138,9 @@ mkdir -p /home/db
 echo "[init] Starting WireGuard (${WG_IF})..."
 wg-quick up "${WG_IF}" || (echo "[init] wg-quick up failed" && exit 1)
 chmod u+rw "$WG_CONF"
+
+echo "[init] adding ip route for ${WG_ADDRESS_CIDR} via ${WG_IF}..."
+ip route replace "${WG_DEFAULT_SUBNET}" dev "${WG_IF}" || true
 
 echo "[init] WireGuard up. Starting backend on ${BACKEND_PORT}…"
 exec uvicorn backend.main:app --host 0.0.0.0 --port "${BACKEND_PORT}"
