@@ -29,12 +29,23 @@ export function createInteractions(getPeers:()=>Peer[], getSubnets:()=>Subnet[],
   }
   function hitTestSubnet(pt:{x:number;y:number}) {
     const subnets = getSubnets();
-    for (let i=subnets.length-1;i>=0;i--) {
-      const s = subnets[i];
+    // Collect all subnets whose rectangle contains the point
+    const hits: any[] = [];
+    for (const s of subnets) {
       const left = s.x - s.width/2, right = s.x + s.width/2, top = s.y - s.height/2, bottom = s.y + s.height/2;
-      if (pt.x>=left && pt.x<=right && pt.y>=top && pt.y<=bottom) return s;
+      if (pt.x>=left && pt.x<=right && pt.y>=top && pt.y<=bottom) hits.push(s);
     }
-    return null;
+    if (!hits.length) return null;
+    // Prefer the most specific (largest prefix length). If tie, prefer smaller area.
+    hits.sort((a,b)=> {
+      const ap = parseInt(a.cidr.split('/')[1]||'0',10);
+      const bp = parseInt(b.cidr.split('/')[1]||'0',10);
+      if (ap !== bp) return bp - ap; // larger prefix first
+      const aArea = a.width * a.height; const bArea = b.width * b.height;
+      if (aArea !== bArea) return aArea - bArea; // smaller visual area first
+      return 0;
+    });
+    return hits[0];
   }
 
   function hitTestLink(pt:{x:number;y:number}) {

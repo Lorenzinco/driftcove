@@ -1,6 +1,7 @@
 import subprocess
 from typing import Iterable
 from backend.core.logger import logging
+import ipaddress
 import json
 import re
 
@@ -20,7 +21,7 @@ def _nft_try(cmd: str) -> None:
     proc = subprocess.run([NFT_BIN, *cmd.split()],
                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     if proc.returncode != 0:
-        logging.info("[ERROR] nft try failed (ignored): %s -> %s", cmd, proc.stderr.strip())
+        logging.debug("nft try failed (ignored): %s -> %s", cmd, proc.stderr.strip())
 
 def _slug(s: str) -> str:
     return "".join(ch if ch.isalnum() else "_" for ch in s)
@@ -43,6 +44,37 @@ def _delete_rule_by_match(chain: str, pattern: str) -> None:
 def flush_dcv(wg_if: str = "wg0") -> None:
     _nft_try("delete table inet dcv")
     ensure_table_and_chain(wg_if=wg_if)
+
+
+def _try_conntrack(args: list[str]) -> None:
+    try:
+        subprocess.run(["conntrack", *args], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except FileNotFoundError:
+        logging.debug("conntrack not found; skipping flush")
+    except subprocess.CalledProcessError as e:
+        logging.debug("conntrack flush failed (ignored): %s %s", args, getattr(e, "stderr", ""))
+
+def flush_conntrack_for_ip(ip: str) -> None:
+    # Decide family
+    fam = "ipv6" if ":" in ip else "ipv4"
+    _try_conntrack(["-D", "-f", fam, "-s", ip])
+    _try_conntrack(["-D", "-f", fam, "-d", ip])
+
+def flush_conntrack_for_prefix(cidr: str, allow_large_prefix: bool = False) -> None:
+    try:
+        net = ipaddress.ip_network(cidr, strict=False)
+    except ValueError:
+        logging.debug("invalid CIDR %s; skipping conntrack flush", cidr)
+        return
+    # Skip very broad prefixes unless explicitly allowed
+    if not allow_large_prefix:
+        if (net.version == 4 and net.prefixlen < 24) or (net.version == 6 and net.prefixlen < 64):
+            logging.debug("CIDR %s too broad; skipping conntrack flush", cidr)
+            return
+    fam = "ipv6" if net.version == 6 else "ipv4"
+    _try_conntrack(["-D", "-f", fam, "-s", cidr])
+    _try_conntrack(["-D", "-f", fam, "-d", cidr])
 
 # ---------- Snapshot / Restore ----------
 
@@ -150,15 +182,93 @@ def ensure_subnet(subnet_id: str) -> None:
     _nft_try(f"add rule inet dcv fwd_est ct state established,related "
              f"ct original ip saddr @{members} ct original ip daddr @{public} accept")
 
-def destroy_subnet(subnet_id: str) -> None:
+def destroy_subnet(subnet_id: str, destroy_all_traffic_to_peers_inside: bool=False) -> None:
     s = _slug(subnet_id)
     members = f"subnet_{s}_members"
     public  = f"subnet_{s}_public"
+    # First, clean up any elements in pair sets that reference this subnet
+    _purge_pair_set_for_subnet("p2p_links", subnet_id)
+    _purge_pair_set_for_subnet("svc_guest", subnet_id)
+    _purge_service_triples_for_subnet(subnet_id)
+    _purge_pair_set_for_subnet("admin_links", subnet_id)
+    _purge_pair_set_for_subnet("admin_peer2cidr", subnet_id)
 
-    _delete_rule_by_match("wg_allow", rf"ip saddr @{members} ip daddr @{public} ct state new accept")
-    _delete_rule_by_match("fwd_est",  rf"ct original ip saddr @{members} ct original ip daddr @{public} accept")
+    # Broad sweep via JSON: delete any rule in any chain that references either set
+    try:
+        out = subprocess.check_output([NFT_BIN, "-j", "list", "table", "inet", "dcv"], text=True)
+        data = json.loads(out)
+    except Exception:
+        data = None
+
+    to_delete = []
+    def has_set(node, name):
+        if isinstance(node, dict):
+            if node.get("set") == name: return True
+            if "lookup" in node:
+                lk = node["lookup"]
+                if isinstance(lk, dict) and (lk.get("set") == name or lk.get("name") == name):
+                    return True
+            return any(has_set(v, name) for v in node.values())
+        if isinstance(node, list):
+            return any(has_set(v, name) for v in node)
+        return False
+
+    if isinstance(data, dict):
+        for item in data.get("nftables", []):
+            rule = item.get("rule")
+            if not rule: continue
+            chain = rule.get("chain"); handle = rule.get("handle")
+            if chain and handle is not None:
+                expr = rule.get("expr", [])
+                if has_set(expr, members) or has_set(expr, public):
+                    to_delete.append((chain, str(handle)))
+
+    for chain, handle in to_delete:
+        _nft_try(f"delete rule inet dcv {chain} handle {handle}")
+
+    # Extra safety for your known patterns
+    _delete_rule_by_match("wg_allow", rf"@{members}")
+    _delete_rule_by_match("wg_allow", rf"@{public}")
+    _delete_rule_by_match("fwd_est",  rf"@{members}")
+    _delete_rule_by_match("fwd_est",  rf"@{public}")
+
+    # Now sets can go
+    _nft_try(f"flush set inet dcv {members}")
+    _nft_try(f"flush set inet dcv {public}")
     _nft_try(f"delete set inet dcv {members}")
     _nft_try(f"delete set inet dcv {public}")
+    # Conntrack cleanup is manual for instant flush
+    flush_conntrack_for_prefix(subnet_id, allow_large_prefix=destroy_all_traffic_to_peers_inside)
+
+def _purge_pair_set_for_subnet(setname: str, cidr: str):
+    try:
+        js = subprocess.check_output([NFT_BIN, "-j", "list", "set", "inet", "dcv", setname], text=True)
+        data = json.loads(js)
+        net = ipaddress.ip_network(cidr, strict=False)
+        for el in data.get("set", {}).get("elem", []):
+            pair = el.get("elem", [])
+            if len(pair) != 2: continue
+            a, b = pair
+            if (ipaddress.ip_address(a) in net) or (ipaddress.ip_address(b) in net):
+                _nft_try(f"delete element inet dcv {setname} {{ {a} . {b} }}")
+    except Exception:
+        pass
+
+def _purge_service_triples_for_subnet(cidr: str):
+    """Remove svc_guest triples where src or dst is in the cidr (port ignored)."""
+    try:
+        js = subprocess.check_output([NFT_BIN, "-j", "list", "set", "inet", "dcv", "svc_guest"], text=True)
+        data = json.loads(js)
+        net = ipaddress.ip_network(cidr, strict=False)
+        for el in data.get("set", {}).get("elem", []):
+            tup = el.get("elem", [])
+            if len(tup) != 3:
+                continue
+            a, b, port = tup
+            if (ipaddress.ip_address(a) in net) or (ipaddress.ip_address(b) in net):
+                _nft_try(f"delete element inet dcv svc_guest {{ {a} . {b} . {port} }}")
+    except Exception:
+        pass
 
 def add_member(subnet_id: str, ip: str) -> None:
     s = _slug(subnet_id)
@@ -167,6 +277,8 @@ def add_member(subnet_id: str, ip: str) -> None:
 def del_member(subnet_id: str, ip: str) -> None:
     s = _slug(subnet_id)
     _nft_try(f"delete element inet dcv subnet_{s}_members {{ {ip} }}")
+    # Conntrack cleanup
+    flush_conntrack_for_ip(ip)
 
 def make_public(subnet_id: str, ip: str) -> None:
     s = _slug(subnet_id)
@@ -185,6 +297,20 @@ def add_p2p_link(a_ip: str, b_ip: str) -> None:
 def remove_p2p_link(a_ip: str, b_ip: str) -> None:
     _nft_try(f"delete element inet dcv p2p_links {{ {a_ip} . {b_ip} }}")
     _nft_try(f"delete element inet dcv p2p_links {{ {b_ip} . {a_ip} }}")
+
+
+def _purge_pair_set_for_ip(setname: str, ip: str):
+    try:
+        js = subprocess.check_output(["nft","-j","list","set","inet","dcv",setname], text=True)
+        data = json.loads(js)
+        for el in data.get("set",{}).get("elem",[]):
+            pair = el.get("elem",[])
+            if len(pair) == 2:
+                a,b = pair
+                if a == ip or b == ip:
+                    _nft_try(f"delete element inet dcv {setname} {{ {a} . {b} }}")
+    except Exception:
+        pass
 
 # ---------- Peer → Service links (peer-scoped) ----------
 

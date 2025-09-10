@@ -58,13 +58,13 @@ def delete_service(service_name: str, _: Annotated[str, Depends(verify_token)]):
             service= db.get_service_by_name(service_name)
             if service is None:
                 raise HTTPException(status_code=404, detail="Service not found")
-            peers_linked = db.get_service_peers(service)
+            peers_linked = db.get_peers_linked_to_service(service)
             # Remove the service from the allowed IPs of the peers
             for peer in peers_linked:
                 logging.info(f"Removing service {service.name} from peer {peer.username}")
                 revoke_service(peer.address, service.address, service.port)
             logging.info(f"Removing service {service.name} from the database")
-            db.delete_service(service)
+            db.remove_service(service)
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
@@ -91,7 +91,7 @@ def service_connect(username: str, service_name: str, _: Annotated[str, Depends(
                 raise HTTPException(status_code=404, detail="Service host not found")
             
             
-            db.add_peer_service_link(peer, service)
+            db.add_link_from_peer_to_service(peer, service)
             logging.info(f"Connecting peer {peer.username} to service {service.name}")
             grant_service(peer.address, host.address, service.port)
 
@@ -120,13 +120,13 @@ def service_disconnect(username: str, service_name: str, _: Annotated[str, Depen
                 raise HTTPException(status_code=404, detail="Service host not found")
             
              # Check if the peer is linked to the service
-            linked_peers = db.get_service_peers(service)
+            linked_peers = db.get_peers_linked_to_service(service)
             if peer not in linked_peers:
                 raise HTTPException(status_code=400, detail=f"Peer {username} is not connected to service {service_name}")
             
             logging.info(f"Disconnecting peer {peer.username} from service {service.name}")
             revoke_service(peer.address, host.address, service.port)
-            db.remove_peer_service_link(peer, service)
+            db.remove_link_from_peer_to_service(peer, service)
     
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to disconnect {username} from {service_name}: {e}")

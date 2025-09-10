@@ -19,7 +19,9 @@ from backend.core.nftables import (
     add_p2p_link, remove_p2p_link,
     add_member,
     grant_admin_peer_to_peer,
-    revoke_admin_peer_to_peer
+    revoke_admin_peer_to_peer,
+    revoke_admin_peer_to_subnet,
+    _purge_pair_set_for_ip,
 )
 
 router = APIRouter(tags=["peer"])
@@ -157,52 +159,7 @@ def delete_peer(username: str, _: Annotated[str, Depends(verify_token)]):
             peer = db.get_peer_by_username(username)
             if peer is None:
                 raise HTTPException(status_code=404, detail="Peer not found")
-
-            logging.info(f"Removing peer {peer.username} ({peer.address})")
-
-            # 1) Revoke peer→service grants this peer consumes
-            peer_services = db.get_peer_services(peer)
-            for service in peer_services:
-                host = db.get_service_host(service)
-                if host:
-                    revoke_service(peer.address, host.address, service.port)
-                db.remove_peer_service_link(peer, service)
-
-            # 2) If peer hosts services, revoke guests' grants to those services and delete the services
-            hosted_services = db.get_services_by_host(peer)
-            for service in hosted_services:
-                service_peers = db.get_service_peers(service)
-                for guest_peer in service_peers:
-                    revoke_service(guest_peer.address, peer.address, service.port)
-                    db.remove_peer_service_link(guest_peer, service)
-                db.delete_service(service)
-
-            # 3) Remove peer from every subnet it belongs to (membership + public flag)
-            peer_subnets = db.get_peers_links_to_subnets(peer)
-            for s in peer_subnets:
-                revoke_public(s.subnet, peer.address)
-                del_member(s.subnet, peer.address)
-                db.remove_link_from_peer_from_subnet(peer, s)
-
-            # 4) Remove P2P links (nft + DB)
-            # If you have a direct getter use it; else derive from dict
-            links = db.get_links_between_peers()  # dict: src_ip -> [dst_peer]
-            for dst in links.get(peer.address, []):
-                remove_p2p_link(peer.address, dst.address)
-                db.remove_link_between_two_peers(peer, dst)
-            # Also remove reverse edges if they exist
-            for src_ip, dst_list in links.items():
-                for dst in dst_list:
-                    if dst.address == peer.address:
-                        remove_p2p_link(src_ip, peer.address)
-                        src_peer = db.get_peer_by_address(src_ip)
-                        if src_peer:
-                            db.remove_link_between_two_peers(src_peer, peer)
-
-            # 5) Remove from WireGuard + DB
-            remove_from_wg_config(peer)
-            db.remove_peer(peer)
-
+            helper_remove_peer(peer)
         except HTTPException:
             raise
         except Exception as e:
@@ -239,7 +196,7 @@ def get_user_subnets(username: str, _: Annotated[str, Depends(verify_token)]):
                     best_pl = pl
                     best = s
             subnet = best or subnets[0]
-            subnet_links = db.get_peers_links_to_subnets(peer)
+            subnet_links = db.get_links_from_peer_to_subnets(peer)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
     return {"subnet": subnet, "links": subnet_links}
@@ -259,7 +216,7 @@ def connect_two_peers(peer1_username: str, peer2_username: str,
                 raise HTTPException(status_code=404, detail="One or both peers not found")
 
             add_p2p_link(peer1.address, peer2.address)  # inserts both directions
-            db.add_link_between_two_peers(peer1, peer2)
+            db.add_link_from_peer_to_peer(peer1, peer2)
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Connecting the two peers failed: {e}")
@@ -280,7 +237,7 @@ def disconnect_two_peers(peer1_username: str, peer2_username: str,
                 raise HTTPException(status_code=404, detail="One or both peers not found")
 
             remove_p2p_link(peer1.address, peer2.address)  # removes both directions
-            db.remove_link_between_two_peers(peer1, peer2)
+            db.remove_link_from_peer_to_peer(peer1, peer2)
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Disconnecting the two peers failed: {e}")
@@ -325,3 +282,82 @@ def disconnect_admin_peer_from_peer(admin_username: str, peer_username: str,
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Disconnecting the two peers failed: {e}")
     return {"message": f"Admin peer {admin_username} and peer {peer_username} disconnected"}
+
+def helper_remove_peer(peer: Peer):
+    try:
+        logging.info(f"Removing peer {peer.username} ({peer.address}) via helper")
+        # 1) remove incoming peer to service rules and db entries
+        hosting_services = db.get_services_by_host(peer)
+        for service in hosting_services:
+            service_peers = db.get_peers_linked_to_service(service)
+            for guest_peer in service_peers:
+                revoke_service(guest_peer.address, peer.address, service.port)
+                db.remove_link_from_peer_to_service(guest_peer, service)
+            db.remove_service(service)
+
+        # 2) remove outgoing peer to service rules and db entries
+        peer_services = db.get_peer_services(peer)
+        for service in peer_services:
+            host = db.get_service_host(service)
+            if host:
+                revoke_service(peer.address, host.address, service.port)
+            db.remove_link_from_peer_to_service(peer, service)
+
+        # 3a) Remove peer from every subnet it belongs to (membership)
+        peer_subnets = db.get_links_from_peer_to_subnets(peer)
+        for s in peer_subnets:
+            revoke_public(s.subnet, peer.address)
+            del_member(s.subnet, peer.address)
+            db.remove_link_from_peer_to_subnet(peer, s)
+        
+        # 3b) Remove peer from every subnet it falls inside (address space)
+        all_subnets = db.get_all_subnets()
+        for s in all_subnets:
+            if db.is_ip_in_subnet(peer.address, s):
+                revoke_public(s.subnet, peer.address)
+                del_member(s.subnet, peer.address)
+
+        # 4a) Remove P2P links (nft + DB)
+        p2p_links = db.get_links_from_peer_to_peer()  # dict: src_ip -> [dst_peer]
+        for dst in p2p_links.get(peer.address, []):
+            remove_p2p_link(peer.address, dst.address)
+            db.remove_link_from_peer_to_peer(peer, dst)
+
+        # 4b) Remove reverse P2P links (nft + DB)
+        all_peers = db.get_all_peers()
+        for other_peer in all_peers:
+            for dst in p2p_links.get(other_peer.address, []):
+                if dst.address == peer.address:
+                    remove_p2p_link(other_peer.address, peer.address)
+                    db.remove_link_from_peer_to_peer(other_peer, peer)
+                    break
+
+        # 4c) Remove all pairs involving this peer
+        _purge_pair_set_for_ip("p2p_links", peer.address)
+
+        # 5a) Remove admin peer to peer links if any
+        admin_peer_to_peer_links = db.get_admin_links_from_peer_to_peer()
+        for other_peer in admin_peer_to_peer_links.get(peer.address, []):
+            revoke_admin_peer_to_peer(peer.address, other_peer.address)
+            db.remove_admin_link_from_peer_to_peer(peer, other_peer)
+
+        # 5b) Remove reverse admin peer to peer links if any
+        for other_peer in all_peers:
+            for dst in admin_peer_to_peer_links.get(other_peer.address, []):
+                if dst.address == peer.address:
+                    revoke_admin_peer_to_peer(other_peer.address, peer.address)
+                    db.remove_admin_link_from_peer_to_peer(other_peer, peer)
+                    break
+
+        # 6) Remove admin peer to subnet links if any
+        admin_links_from_peer_to_subnets = db.get_admin_links_from_peer_to_subnet()
+        for subnet in admin_links_from_peer_to_subnets.get(peer.address, []):
+            revoke_admin_peer_to_subnet(peer.address, subnet.subnet)
+            db.remove_admin_link_from_peer_to_subnet(peer, subnet)
+        
+        # 7) Remove from WireGuard + DB
+        remove_from_wg_config(peer)
+        db.remove_peer(peer)
+    except Exception as e:
+        logging.error(f"Error in helper_remove_peer for {peer.username}: {e}")
+        return

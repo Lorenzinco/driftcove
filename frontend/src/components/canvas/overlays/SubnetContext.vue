@@ -91,8 +91,9 @@ function startConnect(id:string){
 }
 
 function onKey(e:KeyboardEvent){ if (e.key==='Escape' && menu.open) hideMenu(); }
-onMounted(()=> window.addEventListener('keydown', onKey));
-onUnmounted(()=> window.removeEventListener('keydown', onKey));
+function onExternalDeleteRequest(e:any){ const id = e?.detail?.id; if (!id) return; confirmDelete(id); }
+onMounted(()=> { window.addEventListener('keydown', onKey); window.addEventListener('subnet-context-request-delete', onExternalDeleteRequest as any); });
+onUnmounted(()=> { window.removeEventListener('keydown', onKey); window.removeEventListener('subnet-context-request-delete', onExternalDeleteRequest as any); });
 
 window.addEventListener('peer-created-with-config', (e:any)=> {
   const { username, configuration } = e.detail || {};

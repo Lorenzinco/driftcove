@@ -27,7 +27,7 @@ def get_subnets(_: Annotated[str, Depends(verify_token)]):
     """
     try:
         with lock.read_lock():
-            subnets = db.get_subnets()
+            subnets = db.get_all_subnets()
         logging.info(f"Retrieved {len(subnets)} subnets from the database.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database operation failed: {e}")
@@ -46,7 +46,7 @@ def get_topology(_: Annotated[str, Depends(verify_token)]) -> dict:
         with lock.read_lock():
             # Base entities
             try:
-                subnets_fetched = db.get_subnets()
+                subnets_fetched = db.get_all_subnets()
                 logging.debug(f"[topology] subnets fetched: {len(subnets_fetched)}")
             except Exception as e:
                 logging.error("[topology] failed fetching subnets", exc_info=True)
@@ -95,13 +95,13 @@ def get_topology(_: Annotated[str, Depends(verify_token)]) -> dict:
                     logging.error(f"[topology] step {label} failed: {inner}", exc_info=True)
                     raise
 
-            p2p_links = safe("p2p_links", db.get_links_between_peers)
-            service_links = safe("service_links", db.get_links_between_peers_and_services)
-            subnet_links = safe("subnet_links", db.get_links_between_subnets_and_peers)
-            subnet_to_subnet_links = safe("subnet_to_subnet_links", db.get_links_between_subnets)
-            subnet_to_service_links = safe("subnet_to_service_links", db.get_links_from_subnets_to_services)
-            admin_peer_to_peer_links = safe("admin_peer_to_peer_links", db.get_admin_links_from_peer_to_peers)
-            admin_peer_to_subnet_links = safe("admin_peer_to_subnet_links", db.get_admin_links_from_peer_to_subnets)
+            p2p_links = safe("p2p_links", db.get_links_from_peer_to_peer)
+            service_links = safe("service_links", db.get_links_from_peers_to_service)
+            subnet_links = safe("subnet_links", db.get_links_from_peer_to_subnet)
+            subnet_to_subnet_links = safe("subnet_to_subnet_links", db.get_links_from_subnet_to_subnet)
+            subnet_to_service_links = safe("subnet_to_service_links", db.get_links_from_subnet_to_service)
+            admin_peer_to_peer_links = safe("admin_peer_to_peer_links", db.get_admin_links_from_peer_to_peer)
+            admin_peer_to_subnet_links = safe("admin_peer_to_subnet_links", db.get_admin_links_from_peer_to_subnet)
             admin_subnet_to_subnet_links = safe("admin_subnet_to_subnet_links", db.get_admin_links_from_subnet_to_subnet)
 
             topology = Topology(
@@ -191,7 +191,7 @@ def upload_topology(topology: Topology, _: Annotated[str, Depends(verify_token)]
                                 status_code=404,
                                 detail=f"Linked peer with address {linked_peer.address} does not exist",
                             )
-                        db.add_link_between_two_peers(peer_in_db, linked_peer_in_db)
+                        db.add_link_from_peer_to_peer(peer_in_db, linked_peer_in_db)
 
             # Peer->Service links (DB only; nft applied later)
             for service in topology.services.values():
@@ -209,7 +209,7 @@ def upload_topology(topology: Topology, _: Annotated[str, Depends(verify_token)]
                                 status_code=404,
                                 detail=f"Service with name {service.name} does not exist",
                             )
-                        db.add_peer_service_link(peer_in_db, service_in_db)
+                        db.add_link_from_peer_to_service(peer_in_db, service_in_db)
 
             # Subnet -> Peer links (DB only; nft applied later)
             for subnet in topology.subnets.values():
@@ -243,7 +243,7 @@ def upload_topology(topology: Topology, _: Annotated[str, Depends(verify_token)]
                         raise HTTPException(status_code=404, detail=f"Subnet {a} does not exist")
                     if subnet_b_obj is None:
                         raise HTTPException(status_code=404, detail=f"Subnet {b} does not exist")
-                    db.add_link_between_subnets(subnet_a_obj, subnet_b_obj)
+                    db.add_link_from_subnet_to_subnet(subnet_a_obj, subnet_b_obj)
                     seen_pairs.add(key)
 
             # Subnet -> Service links (DB only; nft applied later)
@@ -306,7 +306,7 @@ def upload_topology(topology: Topology, _: Annotated[str, Depends(verify_token)]
                     subnet_in_db = db.get_subnet_by_address(linked_subnet.subnet)
                     if subnet_in_db is None:
                         raise HTTPException(status_code=404, detail=f"Subnet {linked_subnet.subnet} does not exist")
-                    db.add_admin_subnet_to_subnet_link(admin_subnet_in_db, subnet_in_db)
+                    db.add_admin_link_from_subnet_to_subnet(admin_subnet_in_db, subnet_in_db)
 
             # Apply to WG + nftables from DB snapshot
             apply_config_from_database()
@@ -344,7 +344,7 @@ def create_link_between_two_subnets(
                 raise HTTPException(status_code=404, detail=f"Subnet {subnet_b} does not exist")
 
             # DB first
-            db.add_link_between_subnets(subnet_a_obj, subnet_b_obj)
+            db.add_link_from_subnet_to_subnet(subnet_a_obj, subnet_b_obj)
 
             # nftables: bidirectional members -> public
             connect_subnets_bidirectional_public(subnet_a_obj.subnet, subnet_b_obj.subnet)
@@ -373,7 +373,7 @@ def delete_link_between_two_subnets(
                 raise HTTPException(status_code=404, detail=f"Subnet {subnet_b} does not exist")
 
             # DB first
-            db.remove_link_between_subnets(subnet_a_obj, subnet_b_obj)
+            db.remove_link_from_subnet_to_subnet(subnet_a_obj, subnet_b_obj)
 
             # nftables: remove both directions
             disconnect_subnets_bidirectional_public(subnet_a_obj.subnet, subnet_b_obj.subnet)
@@ -431,7 +431,7 @@ def connect_admin_subnet_to_subnet(admin_subnet: str, subnet: str, _: Annotated[
             if admin_subnet_obj is None:
                 raise HTTPException(status_code=404, detail=f"Admin Subnet {admin_subnet} does not exist")
 
-            db.add_admin_subnet_to_subnet_link(admin_subnet_obj, subnet_obj)
+            db.add_admin_link_from_subnet_to_subnet(admin_subnet_obj, subnet_obj)
             logging.info(f"Connecting admin subnet {admin_subnet_obj.subnet} to subnet {subnet_obj.subnet}")
             grant_admin_subnet_to_subnet(admin_subnet_obj.subnet, subnet_obj.subnet)
 
@@ -453,7 +453,7 @@ def disconnect_admin_subnet_to_subnet(admin_subnet: str, subnet: str, _: Annotat
             if admin_subnet_obj is None:
                 raise HTTPException(status_code=404, detail=f"Admin Subnet {admin_subnet} does not exist")
 
-            db.remove_admin_subnet_to_subnet_link(admin_subnet_obj, subnet_obj)
+            db.add_admin_link_from_subnet_to_subnet(admin_subnet_obj, subnet_obj)
             logging.info(f"Disconnecting admin subnet {admin_subnet_obj.subnet} from subnet {subnet_obj.subnet}")
             revoke_admin_subnet_to_subnet(admin_subnet_obj.subnet, subnet_obj.subnet)
 

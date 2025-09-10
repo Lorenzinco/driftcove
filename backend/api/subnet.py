@@ -12,14 +12,20 @@ from backend.core.nftables import (
     make_public,
     ensure_subnet,
     disconnect_subnet_from_subnet_public,
+    disconnect_subnets_bidirectional_public,
     destroy_subnet,
     revoke_subnet_service,
     del_member,
     revoke_public,
     revoke_service,
     grant_admin_peer_to_subnet,
-    revoke_admin_peer_to_subnet
+    revoke_admin_peer_to_subnet,
+    revoke_admin_subnet_to_subnet,
+    revoke_admin_peer_to_peer,
+    remove_p2p_link
 )
+from backend.api.peer import helper_remove_peer
+import ipaddress
 
 
 
@@ -85,31 +91,7 @@ def delete_subnet(subnet: str, _: Annotated[str, Depends(verify_token)]):
             subnet_obj: Subnet = db.get_subnet_by_address(subnet)
             if subnet_obj is None:
                 raise HTTPException(status_code=404, detail="Subnet not found")
-
-            # 1) Revoke subnet -> service grants
-            service_links = db.get_links_from_subnets_to_services()
-            for service in service_links.get(subnet_obj.subnet, []):
-                host = db.get_service_host(service)
-                if host:
-                    revoke_subnet_service(subnet_obj.subnet, host.address, service.port)
-                db.remove_link_from_subnet_to_service(subnet_obj, service)
-
-            # 2) Remove cross-subnet(public) links (both directions if you stored both)
-            subnets_linked = db.get_links_between_subnets()
-            for other_subnet in subnets_linked.get(subnet_obj.subnet, []):
-                disconnect_subnet_from_subnet_public(subnet_obj.subnet, other_subnet.subnet)
-                disconnect_subnet_from_subnet_public(other_subnet.subnet, subnet_obj.subnet)
-                db.remove_link_between_subnets(subnet_obj, other_subnet)
-
-            # 3) (Optional) If you tracked admin subnet grants involving this subnet,
-            #    revoke them here using your admin revoke helpers.
-
-            # 4) Destroy subnet sets + per-subnet rule
-            destroy_subnet(subnet_obj.subnet)
-
-            # 5) Finally remove from DB
-            db.delete_subnet(subnet_obj)
-
+            helper_remove_subnet(subnet_obj)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Subnet deletion failed: {e}")
 
@@ -127,68 +109,89 @@ def delete_subnet_with_peers(subnet: str, token: Annotated[str, Depends(verify_t
             if subnet_obj is None:
                 raise HTTPException(status_code=404, detail="Subnet not found")
 
-            # 1) Revoke subnet -> service grants for this subnet
-            service_links = db.get_links_from_subnets_to_services()
+            # 1 a) Remove links to this subnet from all peers
+            peers_in_subnet = db.get_links_from_peer_to_subnet()
+            for peer in peers_in_subnet.get(subnet_obj.subnet, []):
+                db.remove_link_from_peer_to_subnet(peer, subnet_obj)
+                revoke_public(subnet_obj.subnet, peer.address)
+                del_member(subnet_obj.subnet, peer.address)
+            # 1 b) Remove leftover peer in the subnet that didn't have a link to it ( is inside the address range but no link)
+            all_peers = db.get_all_peers()
+            for peer in all_peers:
+                if db.get_links_from_peer_to_subnets(peer).count(subnet_obj) == 0:
+                    # Check if the peer's address is in the subnet range
+                    try:
+                        subnet_network = ipaddress.ip_network(subnet_obj.subnet, strict=False)
+                        peer_ip = ipaddress.ip_address(peer.address)
+                        if peer_ip in subnet_network:
+                            logging.info(f"Removing peer {peer.username} from subnet {subnet_obj.subnet} due to address containment")
+                            revoke_public(subnet_obj.subnet, peer.address)
+                            del_member(subnet_obj.subnet, peer.address)
+                    except ValueError as ve:
+                        logging.warning(f"Invalid IP address or subnet format: {ve}")
+
+            # 2) Revoke subnet -> service grants for this subnet
+            service_links = db.get_links_from_subnet_to_service()
             for service in service_links.get(subnet_obj.subnet, []):
                 host = db.get_service_host(service)
                 if host:
                     revoke_subnet_service(subnet_obj.subnet, host.address, service.port)
                 db.remove_link_from_subnet_to_service(subnet_obj, service)
 
-            # 2) Remove cross-subnet(public) links (both directions)
-            subnets_linked = db.get_links_between_subnets()
+            # 3) Remove cross-subnet(public) links (both directions)
+            subnets_linked = db.get_links_from_subnet_to_subnet()
             for other_subnet in subnets_linked.get(subnet_obj.subnet, []):
-                disconnect_subnet_from_subnet_public(subnet_obj.subnet, other_subnet.subnet)
-                disconnect_subnet_from_subnet_public(other_subnet.subnet, subnet_obj.subnet)
-                db.remove_link_between_subnets(subnet_obj, other_subnet)
+                disconnect_subnets_bidirectional_public(subnet_obj.subnet, other_subnet.subnet)
+                db.remove_link_from_subnet_to_subnet(subnet_obj, other_subnet)
 
-            # 3) Remove peers inside this subnet
-            peers_inside = db.get_peers_in_subnet(subnet_obj)
-            for peer_ref in peers_inside:
-                peer: Peer | None = db.get_peer_by_username(peer_ref.username)
-                if peer is None:
-                    raise HTTPException(status_code=404, detail=f"Peer {peer_ref.username} not found")
+            # 4 a) Destroy admin links involving this subnet as the source
+            admin_subnet_to_subnet_links = db.get_admin_links_from_subnet_to_subnet()
+            for target_subnet in admin_subnet_to_subnet_links.get(subnet_obj.subnet, []):
+                db.remove_admin_link_from_subnet_to_subnet(subnet_obj, target_subnet)
+                revoke_admin_subnet_to_subnet(subnet_obj.subnet, target_subnet.subnet)
 
-                logging.info(f"Removing peer {peer.username} ({peer.address})")
+            # 4 b) Refetch the links so no links with this subnet remain and also remove links where this subnet is the target
+            admin_subnet_to_subnet_links = db.get_admin_links_from_subnet_to_subnet()
+            all_subnets = db.get_all_subnets()
+            for subnet_other in all_subnets:
+                for target_subnet in admin_subnet_to_subnet_links.get(subnet_other.subnet, []):
+                    if target_subnet.subnet == subnet_obj.subnet:
+                        db.remove_admin_link_from_subnet_to_subnet(subnet_other, subnet_obj)
+                        revoke_admin_subnet_to_subnet(subnet_other.subnet, subnet_obj.subnet)
 
-                # 3a) Revoke peer->service grants for services this peer consumes
-                peer_services = db.get_peer_services(peer)
-                for service in peer_services:
-                    service_host = db.get_service_host(service)
-                    if service_host:
-                        revoke_service(peer.address, service_host.address, service.port)
-                # Remove DB links
-                db.remove_all_services_from_peer(peer)
+            # 4 c) Destroy admin links from peers involving this subnet as the target
+            admin_peer_to_subnet_links = db.get_admin_links_from_peer_to_subnet()
+            all_peers = db.get_all_peers()
+            for peer in all_peers:
+                for target_subnet in admin_peer_to_subnet_links.get(peer.address, []):
+                    if target_subnet.subnet == subnet_obj.subnet:
+                        db.remove_admin_link_from_peer_to_subnet(peer, target_subnet)
+                        revoke_admin_peer_to_subnet(peer.address, target_subnet.subnet)
 
-                # 3b) If the peer hosts services, revoke guests' grants to those services
-                hosted_services = db.get_services_by_host(peer)
-                for service in hosted_services:
-                    service_peers = db.get_service_peers(service)
-                    for service_peer in service_peers:
-                        revoke_service(service_peer.address, peer.address, service.port)
-                        db.remove_peer_service_link(service_peer, service)
-                    db.delete_service(service)  # remove the hosted service itself
+            #5 a) Destroy any subnet inside this subnet
+            nested_subnets = db.get_all_subnets()
+            for target_subnet in nested_subnets:
+                try:
+                    # Check if the target_subnet is fully contained within the subnet to be deleted
+                    parent_network = ipaddress.ip_network(subnet_obj.subnet, strict=False)
+                    target_network = ipaddress.ip_network(target_subnet.subnet, strict=False)
+                    if target_network.subnet_of(parent_network) and target_subnet.subnet != subnet_obj.subnet:
+                        logging.info(f"Also deleting nested subnet {target_subnet.subnet} inside {subnet_obj.subnet}")
+                        helper_remove_subnet(target_subnet)
+                except ValueError as ve:
+                    logging.warning(f"Invalid IP address or subnet format when checking nested subnets: {ve}")
 
-                # 3c) Remove this peer from all subnets it belongs to
-                peer_subnets = db.get_peers_links_to_subnets(peer)
-                for s in peer_subnets:
-                    revoke_public(s.subnet, peer.address)
-                    del_member(s.subnet, peer.address)
-                    db.remove_link_from_peer_from_subnet(peer, s)
+            #5 b) Destroy all peers inside this subnet
+            peers_in_subnet = db.get_peers_in_subnet(subnet_obj)
+            for peer in peers_in_subnet:
+                logging.info(f"Also deleting peer {peer.username} inside subnet {subnet_obj.subnet}")
+                helper_remove_peer(peer)
 
-                # 3d) Remove from WireGuard + DB
-                remove_from_wg_config(peer)
-                db.remove_peer(peer)
-
-            # 4) Finally destroy nftables artifacts for the subnet and delete it from DB
-            destroy_subnet(subnet_obj.subnet)
-            db.delete_subnet(subnet_obj)
-
-        except HTTPException:
-            # re-raise HTTPException as-is
-            raise
+            # 6) Finally destroy nftables artifacts for the subnet and delete it from DB
+            destroy_subnet(subnet_obj.subnet, destroy_all_traffic_to_peers_inside=True)
+            db.remove_subnet(subnet_obj)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Subnet and linked peers deletion failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Subnet deletion failed: {e}")
 
     return {"message": "Subnet and linked peers deleted"}
 
@@ -207,7 +210,7 @@ def disconnect_peer_from_subnet(username: str, subnet: str, _: Annotated[str, De
             if subnet_obj is None:
                 raise HTTPException(status_code=404, detail="Subnet not found")
 
-            db.remove_link_from_peer_from_subnet(peer, subnet_obj)
+            db.remove_link_from_peer_to_subnet(peer, subnet_obj)
 
             # nftables: reverse what connect did
             revoke_public(subnet_obj.subnet, peer.address)
@@ -266,3 +269,74 @@ def admin_disconnect_peer_from_subnet(admin_username: str, subnet: str, _: Annot
             raise HTTPException(status_code=500, detail=f"Disconnection of admin peer {admin_username} from subnet {subnet} failed: {e}")
 
     return {"message": "Admin peer disconnected from subnet"}
+
+def helper_remove_subnet(subnet: Subnet):
+    """
+    Helper function to remove a subnet and all its references, without acquiring locks or managing state.
+    This is intended for internal use only, e.g. when removing a peer that may be in subnets.
+    """
+    try:
+        # 1 a) Remove links to this subnet from all peers
+        peers_in_subnet = db.get_links_from_peer_to_subnet()
+        for peer in peers_in_subnet.get(subnet.subnet, []):
+            db.remove_link_from_peer_to_subnet(peer, subnet)
+            revoke_public(subnet.subnet, peer.address)
+            del_member(subnet.subnet, peer.address)
+        # 1 b) Remove leftover peer in the subnet that didn't have a link to it ( is inside the address range but no link)
+        all_peers = db.get_all_peers()
+        for peer in all_peers:
+            if db.get_links_from_peer_to_subnets(peer).count(subnet) == 0:
+                # Check if the peer's address is in the subnet range
+                try:
+                    subnet_network = ipaddress.ip_network(subnet.subnet, strict=False)
+                    peer_ip = ipaddress.ip_address(peer.address)
+                    if peer_ip in subnet_network:
+                        logging.info(f"Removing peer {peer.username} from subnet {subnet.subnet} due to address containment")
+                        revoke_public(subnet.subnet, peer.address)
+                        del_member(subnet.subnet, peer.address)
+                except ValueError as ve:
+                    logging.warning(f"Invalid IP address or subnet format: {ve}")
+
+        # 2) Revoke subnet -> service grants for this subnet
+        service_links = db.get_links_from_subnet_to_service()
+        for service in service_links.get(subnet.subnet, []):
+            host = db.get_service_host(service)
+            if host:
+                revoke_subnet_service(subnet.subnet, host.address, service.port)
+            db.remove_link_from_subnet_to_service(subnet, service)
+
+        # 3) Remove cross-subnet(public) links (both directions)
+        subnets_linked = db.get_links_from_subnet_to_subnet()
+        for other_subnet in subnets_linked.get(subnet.subnet, []):
+            disconnect_subnets_bidirectional_public(subnet.subnet, other_subnet.subnet)
+            db.remove_link_from_subnet_to_subnet(subnet, other_subnet)
+
+        # 4 a) Destroy admin links involving this subnet as the source
+        admin_subnet_to_subnet_links = db.get_admin_links_from_subnet_to_subnet()
+        for target_subnet in admin_subnet_to_subnet_links.get(subnet.subnet, []):
+            db.remove_admin_link_from_subnet_to_subnet(subnet, target_subnet)
+            revoke_admin_subnet_to_subnet(subnet.subnet, target_subnet.subnet)
+
+        # 4 b) Refetch the links so no links with this subnet remain and also remove links where this subnet is the target
+        admin_subnet_to_subnet_links = db.get_admin_links_from_subnet_to_subnet()
+        all_subnets = db.get_all_subnets()
+        for subnet_other in all_subnets:
+            for target_subnet in admin_subnet_to_subnet_links.get(subnet_other.subnet, []):
+                if target_subnet.subnet == subnet.subnet:
+                    db.remove_admin_link_from_subnet_to_subnet(subnet_other, subnet)
+                    revoke_admin_subnet_to_subnet(subnet_other.subnet, subnet.subnet)
+
+        # 4 c) Destroy admin links from peers involving this subnet as the target
+        admin_peer_to_subnet_links = db.get_admin_links_from_peer_to_subnet()
+        all_peers = db.get_all_peers()
+        for peer in all_peers:
+            for target_subnet in admin_peer_to_subnet_links.get(peer.address, []):
+                if target_subnet.subnet == subnet.subnet:
+                    db.remove_admin_link_from_peer_to_subnet(peer, target_subnet)
+                    revoke_admin_peer_to_subnet(peer.address, target_subnet.subnet)
+        # 5) Finally destroy nftables artifacts for the subnet and delete it from DB
+        destroy_subnet(subnet.subnet)
+        db.remove_subnet(subnet)
+    except Exception as e:
+        logging.error(f"Failed to remove subnet {subnet.subnet} in helper: {e}")
+        raise e

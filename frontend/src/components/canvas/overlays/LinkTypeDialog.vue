@@ -179,8 +179,13 @@ const canSubmit = computed(()=> {
   if (submitting.value) return false
   switch (mode.value) {
     case 'peer-subnet':
+      // Allow either orientation: peer -> subnet OR subnet -> peer (treated identically)
+      if (fromType.value==='peer' && toType.value==='subnet') return !!fromPeer.value && !!toSubnet.value
+      if (fromType.value==='subnet' && toType.value==='peer') return !!toPeer.value && !!fromSubnet.value
+      return false
     case 'admin-peer-subnet':
-      return !!fromPeer.value && !!toSubnet.value
+      // Only valid in peer -> subnet orientation
+      return fromType.value==='peer' && toType.value==='subnet' && !!fromPeer.value && !!toSubnet.value
     case 'subnet-subnet':
     case 'admin-subnet-subnet':
       return !!fromSubnet.value && !!toSubnet.value
@@ -242,9 +247,15 @@ async function submit(){
       if (!ok){ error.value = backend.lastError || 'Backend service connect failed'; return }
       // Topology refresh will cause service link(s) to appear via new service grouping.
     } else if (mode.value==='peer-subnet'){
-      const aUser = fromPeer.value?.name; const subnetCidr = toSubnet.value?.cidr
-      if (!aUser || !subnetCidr){ error.value='Missing peer or subnet'; return }
-      const ok = await backend.connectPeerToSubnet(aUser, subnetCidr)
+      // Support reversed orientation (subnet -> peer) by swapping roles
+      let peerUser: string | undefined; let subnetCidr: string | undefined;
+      if (fromType.value==='peer' && toType.value==='subnet') {
+        peerUser = fromPeer.value?.name; subnetCidr = toSubnet.value?.cidr;
+      } else if (fromType.value==='subnet' && toType.value==='peer') {
+        peerUser = toPeer.value?.name; subnetCidr = fromSubnet.value?.cidr;
+      }
+      if (!peerUser || !subnetCidr){ error.value='Missing peer or subnet'; return }
+      const ok = await backend.connectPeerToSubnet(peerUser, subnetCidr)
       if (!ok){ error.value = backend.lastError || 'Backend peer-subnet connect failed'; return }
     } else if (mode.value==='admin-peer-subnet') {
       const adminUser = fromPeer.value?.name; const subnetCidr = toSubnet.value?.cidr

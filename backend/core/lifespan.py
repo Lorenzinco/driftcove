@@ -53,10 +53,10 @@ def apply_config_from_database():
 
         peers = db.get_all_peers()
         services = db.get_all_services()
-        peer2services = db.get_links_between_peers_and_services()
-        peer2peers = db.get_links_between_peers()
-        admin_peer2peers = db.get_admin_links_from_peer_to_peers()
-        admin_peer2subnets = db.get_admin_links_from_peer_to_subnets()
+        peer2services = db.get_links_from_peers_to_service()
+        peer2peers = db.get_links_from_peer_to_peer()
+        admin_peer2peers = db.get_admin_links_from_peer_to_peer()
+        admin_peer2subnets = db.get_admin_links_from_peer_to_subnet()
         admin_subnet2subnets = db.get_admin_links_from_subnet_to_subnet()
 
         for peer in peers:
@@ -75,9 +75,9 @@ def apply_config_from_database():
 
         # 3) Subnets: create sets & rule, then members/public
         logging.info("Applying subnet membership/public flags…")
-        subnets = db.get_subnets()
-        subnet_to_subnet_links = db.get_links_between_subnets()
-        subnet_to_service_links = db.get_links_from_subnets_to_services()
+        subnets = db.get_all_subnets()
+        subnet_to_subnet_links = db.get_links_from_subnet_to_subnet()
+        subnet_to_service_links = db.get_links_from_subnet_to_service()
 
         for subnet in subnets:
             logging.info(f"Ensuring nftables structures for subnet {subnet.name} ({subnet.subnet})")

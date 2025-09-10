@@ -49,7 +49,17 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   function drawSubnets(ctx:CanvasRenderingContext2D){
     const { subnets, panzoom, theme, ui } = deps();
     const color = theme?.colors.subnet || '#7CF29A';
-    for (const s of subnets){
+    // Order: broader networks (smaller prefix) first, then more specific (larger prefix) last so they sit on top visually.
+    const ordered = [...subnets].sort((a,b)=> {
+      const ap = parseInt(a.cidr.split('/')[1]||'0',10);
+      const bp = parseInt(b.cidr.split('/')[1]||'0',10);
+      if (ap !== bp) return ap - bp; // smaller prefix (broader) first
+      // If equal prefix, draw larger area first so smaller area overlays
+      const aArea = a.width * a.height; const bArea = b.width * b.height;
+      if (aArea !== bArea) return bArea - aArea;
+      return a.id.localeCompare(b.id);
+    });
+    for (const s of ordered){
       const tl = toScreen(s.x - s.width/2, s.y - s.height/2);
       const w = s.width * panzoom.zoom; const h = s.height * panzoom.zoom;
   ctx.save();
@@ -141,7 +151,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       else if (l.kind==='service'){ if (l.serviceName) agg.services.add(l.serviceName); if (!agg.serviceHostId) agg.serviceHostId = l.fromId; if (!agg.p2p) agg.repId = l.id; }
     }
     ctx.save(); ctx.lineWidth=2; let anyAnim=false;
-    for (const key of Object.keys(byPair)){
+  for (const key of Object.keys(byPair)){
       const agg = byPair[key]; const { a, b } = agg; const A = toScreen(a.x,a.y); const B = toScreen(b.x,b.y);
       const isMixed = agg.p2p && agg.services.size>0;
       const isServiceOnly = !agg.p2p && agg.services.size>0;
@@ -192,7 +202,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
     const { links, peers, subnets, ui } = deps();
     let anyAnim = false;
     const lensPulse = (Math.sin(frame/25)+1)/2; // 0..1
-    for (const l of links){
+  for (const l of links){
       const kind = (l as any).kind;
       if (kind !== 'admin-p2p' && kind !== 'admin-peer-subnet' && kind !== 'admin-subnet-subnet') continue;
       // Resolve endpoints in world space (peer center or subnet boundary)
@@ -222,7 +232,9 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       }
       if (!valid) continue;
       const A = toScreen(Ax,Ay); const B = toScreen(Bx,By);
-      const active = ui?.hoverLinkId === (l as any).id || ui?.hoverPeerId === l.fromId || ui?.hoverSubnetId === l.fromId;
+  // Pair key (direction-agnostic) so selection of any link between the two endpoints animates it.
+  const pk = (()=>{ const a=l.fromId, b=l.toId; return a < b ? `${a}::${b}` : `${b}::${a}`; })();
+  const active = ui?.hoverLinkId === (l as any).id || ui?.hoverPeerId === l.fromId || ui?.hoverSubnetId === l.fromId || (ui?.selection?.type==='link' && ui.selection.id===pk);
       // Determine styling differences
       let strokeStyle = 'rgba(255,255,255,0.25)';
       let dash: number[] | null = null;
@@ -283,7 +295,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   function drawMembershipLinks(ctx:CanvasRenderingContext2D){
     const { links, peers, subnets, ui } = deps();
     let anyAnim = false;
-    for (const l of links){
+  for (const l of links){
       if ((l as any).kind !== 'membership') continue;
       // Expect l.fromId = peerId, l.toId = subnetId; tolerate reversed
       let peer = peers.find(p=> p.id===l.fromId);
@@ -305,7 +317,8 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       let strokeStyle = '#7CF29A';
       const raw = (subnet as any).rgba;
       if (typeof raw === 'number'){ const r=(raw>>24)&0xFF, g=(raw>>16)&0xFF, b=(raw>>8)&0xFF; strokeStyle = `rgba(${r},${g},${b},1)`; }
-      const active = (ui?.hoverPeerId === peer.id) || (ui?.hoverSubnetId === subnet.id) || (ui?.hoverLinkId === (l as any).id);
+  const pk = (()=>{ const a=peer.id, b=subnet.id; return a < b ? `${a}::${b}` : `${b}::${a}`; })();
+  const active = (ui?.hoverPeerId === peer.id) || (ui?.hoverSubnetId === subnet.id) || (ui?.hoverLinkId === (l as any).id) || (ui?.selection?.type==='link' && ui.selection.id===pk);
       // Two dashed halves moving toward center when active
       ctx.save(); ctx.lineWidth=2; ctx.setLineDash([10,6]);
       const speed = (frame * 0.8);
@@ -329,7 +342,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   function drawSubnetServiceLinks(ctx:CanvasRenderingContext2D){
     const { links, peers, subnets, ui } = deps();
     let anyAnim=false;
-    for (const l of links){
+  for (const l of links){
       if (l.kind !== 'subnet-service') continue;
       const host = peers.find(p=> p.id===l.fromId);
       const subnet = subnets.find(s=> s.id===l.toId) || subnets.find(s=> s.id===l.fromId);
@@ -345,7 +358,8 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       // Color from subnet rgba
       let strokeStyle = '#2196F3';
       const raw = (subnet as any).rgba; if (typeof raw==='number'){ const r=(raw>>24)&0xFF,g=(raw>>16)&0xFF,b=(raw>>8)&0xFF; strokeStyle=`rgba(${r},${g},${b},1)`; }
-      const active = ui?.hoverPeerId===host.id || ui?.hoverSubnetId===subnet.id || ui?.hoverLinkId===(l as any).id;
+  const pk = (()=>{ const a=host.id, b=subnet.id; return a < b ? `${a}::${b}` : `${b}::${a}`; })();
+  const active = ui?.hoverPeerId===host.id || ui?.hoverSubnetId===subnet.id || ui?.hoverLinkId===(l as any).id || (ui?.selection?.type==='link' && ui.selection.id===pk);
       ctx.save(); ctx.lineWidth=2; ctx.setLineDash([10,6]); ctx.strokeStyle=strokeStyle; ctx.lineDashOffset = active ? -frame*0.8 : 0;
       ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke(); ctx.setLineDash([]);
       if (active){
@@ -363,7 +377,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   function drawSubnetSubnetLinks(ctx:CanvasRenderingContext2D){
     const { links, subnets, ui } = deps();
     let anyAnim=false;
-    for (const l of links){
+  for (const l of links){
       if (l.kind !== 'subnet-subnet') continue;
       const sA = subnets.find(s=> s.id===l.fromId) || subnets.find(s=> s.id===l.toId);
       const sB = subnets.find(s=> s.id===l.toId) || subnets.find(s=> s.id===l.fromId);
@@ -389,7 +403,8 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
         return `rgba(${r},${g},${b},1)`;
       }
       const colorMid = mix(colorA, colorB);
-      const active = ui?.hoverSubnetId===sA.id || ui?.hoverSubnetId===sB.id || ui?.hoverLinkId===(l as any).id;
+  const pk = (()=>{ const a=sA.id, b=sB.id; return a < b ? `${a}::${b}` : `${b}::${a}`; })();
+  const active = ui?.hoverSubnetId===sA.id || ui?.hoverSubnetId===sB.id || ui?.hoverLinkId===(l as any).id || (ui?.selection?.type==='link' && ui.selection.id===pk);
   // Draw two halves, each moving towards the center
   const speed = (frame * 0.8);
   ctx.save(); ctx.lineWidth=2; ctx.setLineDash([10,6]);

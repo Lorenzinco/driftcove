@@ -49,6 +49,9 @@ class Database:
             self.conn.rollback()
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while rolling back transaction: {e}")
+        
+    def close(self):
+        self.conn.close()
 
     def create_peer(self,peer:Peer):
         """
@@ -208,7 +211,7 @@ class Database:
         return
         
 
-    def delete_subnet(self, subnet: Subnet):
+    def remove_subnet(self, subnet: Subnet):
         """
         This function deletes a subnet from the database.
         """
@@ -277,7 +280,7 @@ class Database:
             raise Exception(f"An error occurred while getting peer by address: {e}")
         return None
 
-    def get_subnets(self)->list[Subnet]:
+    def get_all_subnets(self)->list[Subnet]:
         """
         Returns a list of subnets inside the database.
         """
@@ -305,6 +308,7 @@ class Database:
                 FROM subnets WHERE subnet = ?
             """, (address,))
             row = cur.fetchone()
+            logging.info(f"Subnet row for address {address}: {row}")
             if row:
                 return Subnet(subnet=row[0], name=row[1], description=row[2], x=row[3], y=row[4], width=row[5], height=row[6], rgba=row[7])
 
@@ -328,7 +332,7 @@ class Database:
             raise Exception(f"An error occurred while adding link from peer to subnet: {e}")
         return
     
-    def remove_link_from_peer_from_subnet(self, peer: Peer, subnet: Subnet):
+    def remove_link_from_peer_to_subnet(self, peer: Peer, subnet: Subnet):
         """
         This function removes a peer from a subnet.
         It will delete the entry in the peer_subnets table.
@@ -346,7 +350,7 @@ class Database:
         This function returns a list of subnets that a peer is part of.
         """
         try:
-            subnets = self.get_subnets()
+            subnets = self.get_all_subnets()
             peer_subnets = []
             for subnet in subnets:
                 peer_ip_address = ipaddress.ip_address(peer.address)
@@ -357,7 +361,7 @@ class Database:
             raise Exception(f"An error occurred while getting peers subnet: {e}")
         return None
     
-    def get_peers_links_to_subnets(self,peer:Peer)->list[Subnet]:
+    def get_links_from_peer_to_subnets(self,peer:Peer)->list[Subnet]:
         """
         This function returns a list of subnets that a peer is part of.
         It will return a list of Subnet objects.
@@ -472,7 +476,7 @@ class Database:
         except sqlite3.Error as e:
             raise Exception(f"Database error, {e}")
         
-    def add_peer_service_link(self, peer: Peer, service: Service):
+    def add_link_from_peer_to_service(self, peer: Peer, service: Service):
         """
         This function adds a link between a peer and a service.
         It will create the entry in the peers_services table, which is a many-to-many relationship between peers and services.
@@ -486,7 +490,7 @@ class Database:
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while adding link from peer {peer} to service {service}: {e}")
 
-    def remove_peer_service_link(self, peer: Peer, service: Service):
+    def remove_link_from_peer_to_service(self, peer: Peer, service: Service):
         """
         This function removes a link between a peer and a service.
         It will delete the entry in the peer_services table.
@@ -498,7 +502,7 @@ class Database:
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while removing link from peer to service: {e}")
 
-    def delete_service(self, service: Service):
+    def remove_service(self, service: Service):
         """
         This function deletes a service from the database.
         """
@@ -509,7 +513,7 @@ class Database:
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while deleting service: {e}")
 
-    def get_peers_services_links(self, peer: Peer) -> list[Service]:
+    def get_links_from_peer_to_services(self, peer: Peer) -> list[Service]:
         """
         This function returns a list of services that a user is connected to.
         It will return a list of Service objects.
@@ -606,7 +610,7 @@ class Database:
             raise Exception(f"An error occurred while getting services by host: {e}")
         return services
 
-    def get_service_peers(self, service: Service) -> list[Peer]:
+    def get_peers_linked_to_service(self, service: Service) -> list[Peer]:
         """
         This function returns a list of peers that are linked to a service.
         It will return a list of Peer objects.
@@ -648,7 +652,7 @@ class Database:
             raise Exception(f"An error occurred while getting peer's services: {e}")
         return services
     
-    def add_link_between_two_peers(self, peer1: Peer, peer2: Peer):
+    def add_link_from_peer_to_peer(self, peer1: Peer, peer2: Peer):
         """
         This function adds a link between two peers.
         It will create the entry in the links table, which is a many-to-many relationship between peers.
@@ -661,7 +665,7 @@ class Database:
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while adding link between peers: {e}")
 
-    def remove_link_between_two_peers(self, peer1: Peer, peer2: Peer):
+    def remove_link_from_peer_to_peer(self, peer1: Peer, peer2: Peer):
         """
         Remove an undirected link between two peers (order-agnostic).
         """
@@ -674,7 +678,7 @@ class Database:
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while removing link between peers: {e}")
 
-    def get_links_between_peers(self)->dict[str, list[Peer]]:
+    def get_links_from_peer_to_peer(self)->dict[str, list[Peer]]:
         """
         This function returns a list of links between peers.
         It will return a dictionary with the peer's address as key and all the connected Peers inside a list as value.
@@ -698,7 +702,7 @@ class Database:
             raise Exception(f"An error occurred while getting links between peers: {e}")
         return links
     
-    def get_links_between_peers_and_services(self)->dict[str,list[Peer]]:
+    def get_links_from_peers_to_service(self)->dict[str,list[Peer]]:
         """
         This function returns dictionary with the service name as key and all the connected Peers inside a list as value.
         """
@@ -722,8 +726,9 @@ class Database:
             raise Exception(f"An error occurred while getting links between peers and services: {e}")
         return links
 
-    def get_links_between_subnets_and_peers(self)->dict[str,list[Peer]]:
+    def get_links_from_peer_to_subnet(self)->dict[str,list[Peer]]:
         """
+        Get the peers linked to each subnet.
         This function returns dictionary with the subnet address as key and all the connected Peers inside a list as value.
         """
         links = {}
@@ -745,7 +750,7 @@ class Database:
             raise Exception(f"An error occurred while getting links between subnets and peers: {e}")
         return links
     
-    def add_link_between_subnets(self, subnet1: Subnet, subnet2: Subnet):
+    def add_link_from_subnet_to_subnet(self, subnet1: Subnet, subnet2: Subnet):
         """
         This function adds a link between two subnets.
         It will create the entry in the subnets_subnets table, which is a many-to-many relationship between subnets.
@@ -759,7 +764,7 @@ class Database:
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while adding link between subnets: {e}")
         
-    def remove_link_between_subnets(self, subnet1: Subnet, subnet2: Subnet):
+    def remove_link_from_subnet_to_subnet(self, subnet1: Subnet, subnet2: Subnet):
         """
         This function removes a link between two subnets.
         It will delete the entry in the subnets_subnets table.
@@ -773,7 +778,7 @@ class Database:
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while removing link between subnets: {e}")
         
-    def get_links_between_subnets(self)->dict[str, list[Subnet]]:
+    def get_links_from_subnet_to_subnet(self)->dict[str, list[Subnet]]:
         """
         This function returns a list of links between subnets.
         It will return a dictionary with the subnet's address as key and all the connected Subnets inside a list as value.
@@ -798,7 +803,7 @@ class Database:
             raise Exception(f"An error occurred while getting links between subnets: {e}")
         return links
     
-    def get_links_from_subnets_to_subnets(self, subnet: Subnet) -> list[Subnet]:
+    def get_links_from_subnet_to_subnets(self, subnet: Subnet) -> list[Subnet]:
         """
         This function returns a list of subnets that are linked to a subnet.
         It will return a list of Subnet objects.
@@ -845,8 +850,9 @@ class Database:
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while removing link from subnet to service: {e}")
     
-    def get_links_from_subnets_to_services(self) -> dict[str, list[Service]]:
+    def get_links_from_subnet_to_service(self) -> dict[str, list[Service]]:
         """
+        Get the services linked to each subnet.
         This function returns dictionary with the subnet address as key and all the connected Services inside a list as value.
         """
         links = {}
@@ -869,9 +875,6 @@ class Database:
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting links between subnets and services: {e}")
         return links
-
-    def close(self):
-        self.conn.close()
 
 
     def add_admin_link_from_peer_to_subnet(self, peer: Peer, subnet: Subnet):
@@ -902,8 +905,9 @@ class Database:
             raise Exception(f"An error occurred while removing admin link from peer to subnet: {e}")
         return
 
-    def get_admin_links_from_peer_to_subnets(self)->dict[str,list[Subnet]]:
+    def get_admin_links_from_peer_to_subnet(self)->dict[str,list[Subnet]]:
         """
+        Get all the subnets linked to each peer as admin links.
         This function returns dictionary with the peer's address as key and all the connected Subnets inside a list as value.
         """
         links = {}
@@ -925,7 +929,7 @@ class Database:
             raise Exception(f"An error occurred while getting admin links between peers and subnets: {e}")
         return links
     
-    def add_admin_subnet_to_subnet_link(self, subnet1: Subnet, subnet2: Subnet):
+    def add_admin_link_from_subnet_to_subnet(self, subnet1: Subnet, subnet2: Subnet):
         """
         This function adds an admin link between two subnets.
         It will create the entry in the admin_subnets_subnets table, which is a many-to-many relationship between admin subnets.
@@ -939,7 +943,7 @@ class Database:
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while adding admin link between subnets: {e}")
 
-    def remove_admin_subnet_to_subnet_link(self, subnet1: Subnet, subnet2: Subnet):
+    def remove_admin_link_from_subnet_to_subnet(self, subnet1: Subnet, subnet2: Subnet):
         """
         This function removes an admin link between two subnets.
         It will delete the entry in the admin_subnets_subnets table.
@@ -1004,7 +1008,7 @@ class Database:
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while removing admin link between peers: {e}")
         
-    def get_admin_links_from_peer_to_peers(self)->dict[str, list[Peer]]:
+    def get_admin_links_from_peer_to_peer(self)->dict[str, list[Peer]]:
         """
         This function returns a list of admin links between peers.
         It will return a dictionary with the admin's address as key and all the connected Peers inside a list as value.

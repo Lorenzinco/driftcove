@@ -14,7 +14,7 @@
           <div v-if="peer.presharedKey"><strong>PSK:</strong> <code class="code-inline">{{ peer.presharedKey }}</code></div>
           <div v-if="peer.publicKey"><strong>Pub:</strong> <code class="code-inline">{{ peer.publicKey }}</code></div>
           <div class="d-flex align-center ga-2">
-            <strong>Connected:</strong>
+            <strong>Connected</strong>
             <v-icon
               :color="isOnline ? 'success' : 'error'"
               size="18"

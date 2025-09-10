@@ -59,9 +59,10 @@ async function doDeletePeer(){
   } finally { deleteState.loading=false; }
 }
 function onKey(e:KeyboardEvent){ if (e.key==='Escape' && menu.open) hideMenu(); }
+function onExternalDeleteRequest(e:any){ const id = e?.detail?.id; if (!id) return; confirmDelete(id); }
 
-onMounted(()=> window.addEventListener('keydown', onKey));
-onUnmounted(()=> window.removeEventListener('keydown', onKey));
+onMounted(()=> { window.addEventListener('keydown', onKey); window.addEventListener('peer-context-request-delete', onExternalDeleteRequest as any); });
+onUnmounted(()=> { window.removeEventListener('keydown', onKey); window.removeEventListener('peer-context-request-delete', onExternalDeleteRequest as any); });
 
 defineExpose({ showMenu, hideMenu });
 </script>

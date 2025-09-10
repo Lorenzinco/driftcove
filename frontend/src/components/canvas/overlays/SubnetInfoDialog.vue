@@ -9,6 +9,23 @@
       <v-card-text class="text-body-2">
         <div class="d-flex flex-column ga-2">
           <div v-if="subnet.description"> {{ subnet.description }}</div>
+          <!-- Color editing section -->
+          <div v-if="subnet" class="mt-1 d-flex flex-column ga-2">
+            <div class="text-medium-emphasis" style="font-size:12px; letter-spacing:0.5px;">Appearance</div>
+            <div class="d-flex align-center flex-wrap ga-3">
+              <div class="d-flex align-center ga-2">
+                <input type="color" v-model="colorPicker" @input="applyColor" style="width:42px; height:42px; padding:0; border:none; background:transparent; cursor:pointer;" />
+              </div>
+              <v-slider v-model="alpha" min="0" max="100" step="1" style="max-width:180px" density="compact" hide-details @end="applyColor">
+                <template #prepend>
+                  <span style="font-size:12px; width:34px; display:inline-block;">Alpha</span>
+                </template>
+              </v-slider>
+              <v-text-field v-model="hexFull" label="Hex" density="compact" style="max-width:160px" hide-details @change="onHexFullChange" @keyup.enter="onHexFullChange" />
+              <v-btn size="x-small" variant="tonal" @click="randomizeColor" prepend-icon="mdi-autorenew">Random</v-btn>
+            </div>
+            <div class="text-caption" style="opacity:0.7;">You can click on the color box to open the color picker.</div>
+          </div>
           <div class="mt-2 flex-grow-1">
             <v-expansion-panels class="w-100" multiple>
                 <v-expansion-panel v-if="peersInside.length" class="d-flex flex-column">
@@ -118,7 +135,7 @@
   </v-dialog>
 </template>
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useNetworkStore } from '@/stores/network';
 
 const emits = defineEmits<{
@@ -169,4 +186,69 @@ function show(id:string){ targetSubnetId.value = id; open.value=true; }
 
 // Expose API to parent
 defineExpose({ show });
+
+// ---------------- Color Editing State ----------------
+const colorPicker = ref<string>('#00ff00'); // #RRGGBB
+const alpha = ref<number>(90); // 0..100
+const hexFull = ref<string>('#00ff00E5'); // #RRGGBBAA
+let syncing = false;
+
+function rgbaNumberFromParts(r:number,g:number,b:number,aByte:number){
+  return (((r & 0xFF) << 24) | ((g & 0xFF) << 16) | ((b & 0xFF) << 8) | (aByte & 0xFF)) >>> 0;
+}
+function partsFromRgbaNumber(raw:number){
+  return { r: (raw>>24)&0xFF, g: (raw>>16)&0xFF, b: (raw>>8)&0xFF, a: raw & 0xFF };
+}
+function syncFromSubnet(){
+  const s = subnet.value as any;
+  if (!s) return;
+  let raw = s.rgba;
+  if (typeof raw !== 'number') raw = 0x00FF00E5;
+  const { r,g,b,a } = partsFromRgbaNumber(raw);
+  syncing = true;
+  colorPicker.value = '#' + [r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('').toLowerCase();
+  alpha.value = Math.round((a/255)*100);
+  hexFull.value = '#' + [r,g,b,a].map(x=>x.toString(16).padStart(2,'0')).join('').toUpperCase();
+  syncing = false;
+}
+
+watch(subnet, ()=> { if (open.value) syncFromSubnet(); }, { immediate:true });
+watch(open, (v)=> { if (v) syncFromSubnet(); });
+
+function applyColor(){
+  if (syncing) return;
+  const s = subnet.value as any; if (!s) return;
+  const rgbHex = colorPicker.value.replace('#','').trim();
+  if (!/^([0-9a-fA-F]{6})$/.test(rgbHex)) return;
+  const r = parseInt(rgbHex.slice(0,2),16);
+  const g = parseInt(rgbHex.slice(2,4),16);
+  const b = parseInt(rgbHex.slice(4,6),16);
+  const aByte = Math.min(255, Math.max(0, Math.round(alpha.value/100 * 255)));
+  const rgba = rgbaNumberFromParts(r,g,b,aByte);
+  if (s.rgba !== rgba) s.rgba = rgba;
+  hexFull.value = '#' + [r,g,b,aByte].map(x=>x.toString(16).padStart(2,'0')).join('').toUpperCase();
+}
+
+function onHexFullChange(){
+  const h = hexFull.value.replace('#','').trim();
+  if (!/^([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(h)) { syncFromSubnet(); return; }
+  const r = parseInt(h.slice(0,2),16);
+  const g = parseInt(h.slice(2,4),16);
+  const b = parseInt(h.slice(4,6),16);
+  let aByte = h.length===8 ? parseInt(h.slice(6,8),16) : Math.round(alpha.value/100*255);
+  alpha.value = Math.round((aByte/255)*100);
+  colorPicker.value = '#' + h.slice(0,6).toLowerCase();
+  const s = subnet.value as any; if (s) s.rgba = rgbaNumberFromParts(r,g,b,aByte);
+  hexFull.value = '#' + [r,g,b,aByte].map(x=>x.toString(16).padStart(2,'0')).join('').toUpperCase();
+}
+
+function randomizeColor(){
+  const r = Math.floor(Math.random()*256);
+  const g = Math.floor(Math.random()*256);
+  const b = Math.floor(Math.random()*256);
+  colorPicker.value = '#' + [r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('');
+  applyColor();
+}
+
+watch(alpha, ()=> applyColor());
 </script>

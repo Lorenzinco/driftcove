@@ -414,7 +414,15 @@ function onMouseUp(){
 }
 
 function onKeydown(e:KeyboardEvent){
-  if ((e.key==='Delete' || e.key==='Backspace') && !(e.target as HTMLElement).matches('input,textarea')){ e.preventDefault(); store.deleteSelection(); invalidate(); }
+  if ((e.key==='Delete' || e.key==='Backspace') && !(e.target as HTMLElement).matches('input,textarea')){
+    e.preventDefault();
+    // Instead of immediate deletion, dispatch an event so the page can open the proper confirmation dialog.
+    if (store.selection){
+      const sel = store.selection;
+      window.dispatchEvent(new CustomEvent('request-delete', { detail: { type: sel.type, id: sel.id } }));
+    }
+    return;
+  }
   if (e.key==='Escape'){ store.tool='select'; ui.connect.active=false; ui.connect.fromPeerId=''; ui.connect.fromSubnetId=''; ui.connect.ghostTo=null; }
 }
 

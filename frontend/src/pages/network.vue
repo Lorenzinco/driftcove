@@ -38,9 +38,12 @@
     <v-card class="mt-4 w-100" variant="tonal">
     <v-card-text>
     <div class="d-flex align-center ga-6">
-        <div><span class="legend-dot" style="background:#7AD7F0"></span> Peer</div>
-        <div><span class="legend-dot" style="background:#7CF29A"></span> Subnet (boundary)</div>
-        <div><span class="legend-dot" style="background:#86A1FF"></span> Link</div>
+        <div><span class="legend-dot" style="background:#7AD7F0"></span> Peer (online)</div>
+        <div><span class="legend-dot" style="background:#9CA3AF"></span> Peer (offline)</div>
+        <div>
+            <span style="display:inline-block;width:28px;height:0;border-top:2px dotted #7CF29A;margin-right:8px;vertical-align:middle;"></span>
+            Subnet (boundary)
+        </div>
         <v-spacer />
         <div class="text-caption text-medium-emphasis">Wheel to zoom • Middle drag or Shift+Drag to pan • Del to delete • Esc to exit tool</div>
     </div>
@@ -107,6 +110,29 @@
         const worldY = (screenY - store.pan.y)/store.zoom;
         addSubnetDialog.value?.showAt(worldX, worldY);
     }
+    function handleRequestDelete(e:any){
+        const detail = e.detail||{};
+        const type = detail.type; const id = detail.id;
+        if (!type || !id) return;
+        if (type==='peer'){
+            // Show existing peer context delete dialog by simulating context action
+            // PeerContext exposes no direct method for delete, so dispatch a synthetic menu flow:
+            // We can trigger its confirm dialog by emitting a custom event it listens to? Simpler: add method via ref.
+            // Instead, leverage its showMenu + confirmDelete sequence: expose showMenu then call internal confirmDelete via event.
+            // Since we don't have direct confirmDelete exported, dispatch a custom event the component can listen to.
+            window.dispatchEvent(new CustomEvent('peer-context-request-delete', { detail: { id } }));
+        } else if (type==='subnet') {
+            window.dispatchEvent(new CustomEvent('subnet-context-request-delete', { detail: { id } }));
+        } else if (type==='link') {
+            // Build link list for pairKey to reuse CutLinkDialog
+            const pairKey = id;
+            function mk(a:string,b:string){ return a < b ? `${a}::${b}` : `${b}::${a}`; }
+            const related = store.links.filter(l=> mk(l.fromId,l.toId)===pairKey);
+            if (related.length){
+                cutLinkDialog.value?.show({ pairKey, links: related });
+            }
+        }
+    }
     onMounted(()=> { 
         // Poll topology to refresh peer RX/TX and handshakes frequently
         backend.startTopologyPolling(2000); 
@@ -114,6 +140,7 @@
         window.addEventListener('request-link-type', handleRequestLinkType);
         window.addEventListener('request-cut-link', handleRequestCutLink);
         window.addEventListener('request-add-subnet-at-screen', handleRequestAddSubnetAtScreen);
+        window.addEventListener('request-delete', handleRequestDelete);
     })
     onBeforeUnmount(()=> { 
         backend.stopTopologyPolling(); 
@@ -121,6 +148,7 @@
         window.removeEventListener('request-link-type', handleRequestLinkType);
         window.removeEventListener('request-cut-link', handleRequestCutLink);
         window.removeEventListener('request-add-subnet-at-screen', handleRequestAddSubnetAtScreen);
+        window.removeEventListener('request-delete', handleRequestDelete);
     })
 </script>
 
