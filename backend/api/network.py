@@ -453,7 +453,7 @@ def disconnect_admin_subnet_to_subnet(admin_subnet: str, subnet: str, _: Annotat
             if admin_subnet_obj is None:
                 raise HTTPException(status_code=404, detail=f"Admin Subnet {admin_subnet} does not exist")
 
-            db.add_admin_link_from_subnet_to_subnet(admin_subnet_obj, subnet_obj)
+            db.remove_admin_link_from_subnet_to_subnet(admin_subnet_obj, subnet_obj)
             logging.info(f"Disconnecting admin subnet {admin_subnet_obj.subnet} from subnet {subnet_obj.subnet}")
             revoke_admin_subnet_to_subnet(admin_subnet_obj.subnet, subnet_obj.subnet)
 

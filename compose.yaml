@@ -21,6 +21,7 @@ services:
     volumes:
       - ./wireguard:/etc/wireguard
       - ./database:/home/db
+      - ./captures:/var/log/captures
     ports:
       - "1194:1194/udp"
       - 8000:8000

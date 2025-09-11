@@ -142,5 +142,24 @@ chmod u+rw "$WG_CONF"
 echo "[init] adding ip route for ${WG_ADDRESS_CIDR} via ${WG_IF}..."
 ip route replace "${WG_DEFAULT_SUBNET}" dev "${WG_IF}" || true
 
+echo "[init] setting up tcpdump capture on ${WG_IF}..."
+# --- tcpdump on wg interface (size-rotating ring) ---
+CAP_DIR="${CAP_DIR:-/var/log/captures}"
+WG_IF="${WG_IF:-wg0}"
+
+mkdir -p "$CAP_DIR"
+
+TCPDUMP_FILE_MB="${TCPDUMP_FILE_MB:-50}"   # rotate each 50 MB
+TCPDUMP_RING_FILES="${TCPDUMP_RING_FILES:-20}" # keep 20 files (max ~1 GB pre-compress)
+TCPDUMP_SNAPLEN="${TCPDUMP_SNAPLEN:-128}"
+TCPDUMP_FILTER="${TCPDUMP_FILTER:-(tcp or udp)}"
+
+nohup tcpdump -i "$WG_IF" -n -s "$TCPDUMP_SNAPLEN" \
+  -C "$TCPDUMP_FILE_MB" -W "$TCPDUMP_RING_FILES" \
+  -w "$CAP_DIR/wg-%Y%m%d-%H%M%S.pcap" -z gzip \
+  $TCPDUMP_FILTER >/dev/null 2>&1 &
+echo "[init] tcpdump running on $WG_IF -> $CAP_DIR (size-rotating, gzip)."
+
+
 echo "[init] WireGuard up. Starting backend on ${BACKEND_PORT}…"
 exec uvicorn backend.main:app --host 0.0.0.0 --port "${BACKEND_PORT}"
