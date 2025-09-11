@@ -133,8 +133,38 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
     }
   }
 
+  // Aggregated hover/selection label storage so multiple link kinds between same endpoints produce a single box
+  interface LabelAgg { xSum:number; ySum:number; count:number; lines:Set<string>; stroke?: string }
+  const linkLabelAgg: Record<string, LabelAgg> = {};
+  function addLinkLabel(key:string, x:number, y:number, lines:string[]|string, stroke:string){
+    if (!key) return;
+    let agg = linkLabelAgg[key];
+    if (!agg) agg = linkLabelAgg[key] = { xSum:0, ySum:0, count:0, lines:new Set<string>(), stroke };
+    agg.xSum += x; agg.ySum += y; agg.count++;
+    if (Array.isArray(lines)) lines.forEach(l=> l && agg!.lines.add(l)); else if (lines) agg.lines.add(lines);
+    // Preserve first stroke if already set
+    if (!agg.stroke) agg.stroke = stroke;
+  }
+  function drawAggregatedLinkLabels(ctx:CanvasRenderingContext2D){
+    for (const key of Object.keys(linkLabelAgg)){
+      const agg = linkLabelAgg[key]; if (!agg.lines.size) continue;
+      const mx = agg.xSum / agg.count; const my = agg.ySum / agg.count;
+      const lines = Array.from(agg.lines.values()); lines.sort();
+      ctx.save(); ctx.font='600 12px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      const padX=8, padY=6; const lineH=14; const maxW = Math.max(...lines.map(l=> ctx.measureText(l).width));
+      const boxH = lineH*lines.length + (lines.length-1)*2 + padY*2; const boxW = maxW + padX*2;
+      ctx.beginPath(); (ctx as any).roundRect?.(mx - boxW/2, my - boxH/2, boxW, boxH, 5);
+      ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fill();
+      ctx.strokeStyle = agg.stroke || '#4CAF50'; ctx.lineWidth=1; ctx.stroke();
+      ctx.fillStyle='#fff'; lines.forEach((ln,i)=> ctx.fillText(ln, mx, my - boxH/2 + padY + lineH/2 + i*(lineH+2)) );
+      ctx.restore();
+    }
+  }
+
   function drawLinks(ctx:CanvasRenderingContext2D, ts:number){
   const { links, peers, subnets, ui } = deps();
+  // Determine hovered link (any kind) to propagate hover across all link types for the same endpoint pair
+  const hoveredLink = ui?.hoverLinkId ? links.find(l=> (l as any).id === ui.hoverLinkId) : null;
   // Exclude admin links from aggregation; they are rendered separately with direction.
   const regularLinks = links.filter(l => (l as any).kind !== 'admin-p2p' && (l as any).kind !== 'admin-peer-subnet' && (l as any).kind !== 'admin-subnet-subnet');
   // frame increment moved to draw() so all passes share same timing
@@ -163,7 +193,13 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke();
   // selection.id for links now stores pairKey(a,b); compute once
   const pair = pairKey(a.id,b.id);
-  const active = agg.linkIds.some(id => ui?.hoverLinkId===id) || (ui?.selection?.type==='link' && ui.selection.id===pair) || ui?.hoverPeerId===a.id || ui?.hoverPeerId===b.id;
+      let active = agg.linkIds.some(id => ui?.hoverLinkId===id) || (ui?.selection?.type==='link' && ui.selection.id===pair) || ui?.hoverPeerId===a.id || ui?.hoverPeerId===b.id;
+      // If hovering an admin (or other) link whose endpoints match this pair, also activate
+      if (!active && hoveredLink){
+        const ha = hoveredLink.fromId, hb = hoveredLink.toId;
+        const hp = ha < hb ? `${ha}::${hb}` : `${hb}::${ha}`;
+        if (hp === pair) active = true;
+      }
       if (active){
         const dx=B.x-A.x, dy=B.y-A.y; const len=Math.hypot(dx,dy)||1; const ux=dx/len, uy=dy/len; const t=(frame/60)%1;
         const drawDot=(pos:number,color:string,r=4)=>{ const px=A.x+ux*len*pos, py=A.y+uy*len*pos; ctx.save(); ctx.beginPath(); ctx.fillStyle=color; ctx.shadowColor=color; ctx.shadowBlur=6; ctx.arc(px,py,r,0,Math.PI*2); ctx.fill(); ctx.restore(); };
@@ -182,16 +218,11 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       }
       if (active){
         let lines:string[]=[];
-        if (isMixed) lines=['p2p ⚠'];
+        if (isMixed) { lines=['p2p','services']; }
         else if (isServiceOnly) lines=Array.from(agg.services.values()).sort();
         else lines=['p2p'];
-        const mx=(A.x+B.x)/2, my=(A.y+B.y)/2; ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='600 12px Roboto, sans-serif';
-        const padX=8, padY=6, lineH=14; const maxW=Math.max(...lines.map(l=>ctx.measureText(l).width)); const boxH=lineH*lines.length + (lines.length-1)*2 + padY*2; const boxW=maxW + padX*2;
-        ctx.beginPath(); (ctx as any).roundRect?.(mx-boxW/2, my-boxH/2, boxW, boxH, 5);
-        ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fill();
-        ctx.strokeStyle = isMixed? '#FFC107' : (isServiceOnly? '#2196F3':'#4CAF50'); ctx.lineWidth=1; ctx.stroke();
-        ctx.fillStyle='#fff'; lines.forEach((ln,i)=> ctx.fillText(ln, mx, my - boxH/2 + padY + lineH/2 + i*(lineH+2)) );
-        ctx.restore();
+        const stroke = isMixed? '#FFC107' : (isServiceOnly? '#2196F3':'#4CAF50');
+        addLinkLabel(pair, (A.x+B.x)/2, (A.y+B.y)/2, lines, stroke);
       }
     }
     ctx.restore(); if (anyAnim && invalidateFn) requestAnimationFrame(()=> invalidateFn && invalidateFn());
@@ -202,6 +233,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
     const { links, peers, subnets, ui } = deps();
     let anyAnim = false;
     const lensPulse = (Math.sin(frame/25)+1)/2; // 0..1
+  const hoveredLink = ui?.hoverLinkId ? links.find(l=> (l as any).id === ui.hoverLinkId) : null;
   for (const l of links){
       const kind = (l as any).kind;
       if (kind !== 'admin-p2p' && kind !== 'admin-peer-subnet' && kind !== 'admin-subnet-subnet') continue;
@@ -234,7 +266,12 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       const A = toScreen(Ax,Ay); const B = toScreen(Bx,By);
   // Pair key (direction-agnostic) so selection of any link between the two endpoints animates it.
   const pk = (()=>{ const a=l.fromId, b=l.toId; return a < b ? `${a}::${b}` : `${b}::${a}`; })();
-  const active = ui?.hoverLinkId === (l as any).id || ui?.hoverPeerId === l.fromId || ui?.hoverSubnetId === l.fromId || (ui?.selection?.type==='link' && ui.selection.id===pk);
+  let active = ui?.hoverLinkId === (l as any).id || ui?.hoverPeerId === l.fromId || ui?.hoverSubnetId === l.fromId || (ui?.selection?.type==='link' && ui.selection.id===pk);
+      if (!active && hoveredLink){
+        const ha = hoveredLink.fromId, hb = hoveredLink.toId;
+        const hp = ha < hb ? `${ha}::${hb}` : `${hb}::${ha}`;
+        if (hp === pk) active = true;
+      }
       // Determine styling differences
       let strokeStyle = 'rgba(255,255,255,0.25)';
       let dash: number[] | null = null;
@@ -276,15 +313,11 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
         // Hover label for admin peer->peer links (shadowed box like regular link labels)
         if (kind === 'admin-p2p' || kind === 'admin-subnet-subnet' || kind === 'admin-peer-subnet') {
           const mx = (A.x + B.x) / 2; const my = (A.y + B.y) / 2;
-          const label = 'admin';
-          ctx.save(); ctx.font='600 12px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
-          const padX=8, padY=6; const textW = ctx.measureText(label).width; const boxW = textW + padX*2; const boxH = 14 + padY*2;
-          ctx.beginPath(); (ctx as any).roundRect?.(mx - boxW/2, my - boxH/2, boxW, boxH, 5);
-          ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fill();
-          if (kind==='admin-subnet-subnet') ctx.strokeStyle=strokeStyle; else if (kind==='admin-peer-subnet') ctx.strokeStyle='rgba(180,180,180,0.9)'; else ctx.strokeStyle='rgba(120,190,255,0.9)';
-          ctx.lineWidth=1; ctx.stroke();
-          ctx.fillStyle='#fff'; ctx.fillText(label, mx, my);
-          ctx.restore();
+          let strokeLbl = strokeStyle;
+            if (kind==='admin-peer-subnet') strokeLbl='rgba(180,180,180,0.9)';
+            else if (kind==='admin-p2p') strokeLbl='rgba(120,190,255,0.9)';
+          const key = pk;
+          addLinkLabel(key, mx, my, 'admin', strokeLbl);
         }
       }
       ctx.restore();
@@ -295,6 +328,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   function drawMembershipLinks(ctx:CanvasRenderingContext2D){
     const { links, peers, subnets, ui } = deps();
     let anyAnim = false;
+  const hoveredLink = ui?.hoverLinkId ? links.find(l=> (l as any).id === ui.hoverLinkId) : null;
   for (const l of links){
       if ((l as any).kind !== 'membership') continue;
       // Expect l.fromId = peerId, l.toId = subnetId; tolerate reversed
@@ -318,7 +352,12 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       const raw = (subnet as any).rgba;
       if (typeof raw === 'number'){ const r=(raw>>24)&0xFF, g=(raw>>16)&0xFF, b=(raw>>8)&0xFF; strokeStyle = `rgba(${r},${g},${b},1)`; }
   const pk = (()=>{ const a=peer.id, b=subnet.id; return a < b ? `${a}::${b}` : `${b}::${a}`; })();
-  const active = (ui?.hoverPeerId === peer.id) || (ui?.hoverSubnetId === subnet.id) || (ui?.hoverLinkId === (l as any).id) || (ui?.selection?.type==='link' && ui.selection.id===pk);
+  let active = (ui?.hoverPeerId === peer.id) || (ui?.hoverSubnetId === subnet.id) || (ui?.hoverLinkId === (l as any).id) || (ui?.selection?.type==='link' && ui.selection.id===pk);
+      if (!active && hoveredLink){
+        const ha = hoveredLink.fromId, hb = hoveredLink.toId;
+        const hp = ha < hb ? `${ha}::${hb}` : `${hb}::${ha}`;
+        if (hp === pk) active = true;
+      }
       // Two dashed halves moving toward center when active
       ctx.save(); ctx.lineWidth=2; ctx.setLineDash([10,6]);
       const speed = (frame * 0.8);
@@ -327,14 +366,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       ctx.setLineDash([]); ctx.restore();
       if (active) anyAnim = true;
       // Hover overlay label
-      if (active) {
-        const mx = Mx, my = My; const label = 'subnet guest';
-        ctx.save(); ctx.font='600 12px Roboto, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
-        const padX=8, padY=6; const textW=ctx.measureText(label).width; const boxW=textW+padX*2; const boxH=14+padY*2;
-        ctx.beginPath(); (ctx as any).roundRect?.(mx - boxW/2, my - boxH/2, boxW, boxH, 5);
-        ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fill(); ctx.strokeStyle=strokeStyle; ctx.lineWidth=1; ctx.stroke(); ctx.fillStyle='#fff'; ctx.fillText(label, mx, my);
-        ctx.restore();
-      }
+  if (active) { addLinkLabel(pk, Mx, My, 'subnet guest', strokeStyle); }
     }
     if (anyAnim && invalidateFn) requestAnimationFrame(()=> invalidateFn && invalidateFn());
   }
@@ -342,6 +374,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   function drawSubnetServiceLinks(ctx:CanvasRenderingContext2D){
     const { links, peers, subnets, ui } = deps();
     let anyAnim=false;
+  const hoveredLink = ui?.hoverLinkId ? links.find(l=> (l as any).id === ui.hoverLinkId) : null;
   for (const l of links){
       if (l.kind !== 'subnet-service') continue;
       const host = peers.find(p=> p.id===l.fromId);
@@ -359,16 +392,15 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       let strokeStyle = '#2196F3';
       const raw = (subnet as any).rgba; if (typeof raw==='number'){ const r=(raw>>24)&0xFF,g=(raw>>16)&0xFF,b=(raw>>8)&0xFF; strokeStyle=`rgba(${r},${g},${b},1)`; }
   const pk = (()=>{ const a=host.id, b=subnet.id; return a < b ? `${a}::${b}` : `${b}::${a}`; })();
-  const active = ui?.hoverPeerId===host.id || ui?.hoverSubnetId===subnet.id || ui?.hoverLinkId===(l as any).id || (ui?.selection?.type==='link' && ui.selection.id===pk);
+  let active = ui?.hoverPeerId===host.id || ui?.hoverSubnetId===subnet.id || ui?.hoverLinkId===(l as any).id || (ui?.selection?.type==='link' && ui.selection.id===pk);
+      if (!active && hoveredLink){
+        const ha = hoveredLink.fromId, hb = hoveredLink.toId;
+        const hp = ha < hb ? `${ha}::${hb}` : `${hb}::${ha}`;
+        if (hp === pk) active = true;
+      }
       ctx.save(); ctx.lineWidth=2; ctx.setLineDash([10,6]); ctx.strokeStyle=strokeStyle; ctx.lineDashOffset = active ? -frame*0.8 : 0;
       ctx.beginPath(); ctx.moveTo(A.x,A.y); ctx.lineTo(B.x,B.y); ctx.stroke(); ctx.setLineDash([]);
-      if (active){
-        anyAnim=true;
-        // Label with service name
-        const label = (l as any).serviceName || 'service'; const mx=(A.x+B.x)/2, my=(A.y+B.y)/2; ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='600 12px Roboto, sans-serif';
-        const padX=8, padY=6; const textW=ctx.measureText(label).width; const boxW=textW+padX*2, boxH=14+padY*2;
-        ctx.beginPath(); (ctx as any).roundRect?.(mx-boxW/2, my-boxH/2, boxW, boxH, 5); ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fill(); ctx.strokeStyle=strokeStyle; ctx.lineWidth=1; ctx.stroke(); ctx.fillStyle='#fff'; ctx.fillText(label, mx, my); ctx.restore();
-      }
+  if (active){ anyAnim=true; const label = (l as any).serviceName || 'service'; addLinkLabel(pk, (A.x+B.x)/2, (A.y+B.y)/2, label, strokeStyle); }
       ctx.restore();
     }
     if (anyAnim && invalidateFn) requestAnimationFrame(()=> invalidateFn && invalidateFn());
@@ -377,6 +409,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   function drawSubnetSubnetLinks(ctx:CanvasRenderingContext2D){
     const { links, subnets, ui } = deps();
     let anyAnim=false;
+  const hoveredLink = ui?.hoverLinkId ? links.find(l=> (l as any).id === ui.hoverLinkId) : null;
   for (const l of links){
       if (l.kind !== 'subnet-subnet') continue;
       const sA = subnets.find(s=> s.id===l.fromId) || subnets.find(s=> s.id===l.toId);
@@ -404,7 +437,12 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
       }
       const colorMid = mix(colorA, colorB);
   const pk = (()=>{ const a=sA.id, b=sB.id; return a < b ? `${a}::${b}` : `${b}::${a}`; })();
-  const active = ui?.hoverSubnetId===sA.id || ui?.hoverSubnetId===sB.id || ui?.hoverLinkId===(l as any).id || (ui?.selection?.type==='link' && ui.selection.id===pk);
+  let active = ui?.hoverSubnetId===sA.id || ui?.hoverSubnetId===sB.id || ui?.hoverLinkId===(l as any).id || (ui?.selection?.type==='link' && ui.selection.id===pk);
+      if (!active && hoveredLink){
+        const ha = hoveredLink.fromId, hb = hoveredLink.toId;
+        const hp = ha < hb ? `${ha}::${hb}` : `${hb}::${ha}`;
+        if (hp === pk) active = true;
+      }
   // Draw two halves, each moving towards the center
   const speed = (frame * 0.8);
   ctx.save(); ctx.lineWidth=2; ctx.setLineDash([10,6]);
@@ -416,13 +454,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   ctx.strokeStyle = gradB; ctx.lineDashOffset = active ? -speed : 0; ctx.beginPath(); ctx.moveTo(B.x, B.y); ctx.lineTo(Mx, My); ctx.stroke();
   ctx.setLineDash([]); ctx.restore();
   if (active) anyAnim = true;
-      if (active){
-        // Hover label: cidrA<->cidrB at midpoint
-        const label = `subnets linked`;
-        const mx=(A.x+B.x)/2, my=(A.y+B.y)/2; ctx.save(); ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='600 12px Roboto, sans-serif';
-        const padX=8, padY=6; const textW=ctx.measureText(label).width; const boxW=textW+padX*2, boxH=14+padY*2;
-  ctx.beginPath(); (ctx as any).roundRect?.(mx-boxW/2, my-boxH/2, boxW, boxH, 5); ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fill(); ctx.strokeStyle=colorA; ctx.lineWidth=1; ctx.stroke(); ctx.fillStyle='#fff'; ctx.fillText(label, mx, my); ctx.restore();
-      }
+  if (active){ addLinkLabel(pk, (A.x+B.x)/2, (A.y+B.y)/2, 'subnets linked', colorA); }
     }
     if (anyAnim && invalidateFn) requestAnimationFrame(()=> invalidateFn && invalidateFn());
   }
@@ -711,6 +743,8 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
     clear(ctx, w, h);
   if ((deps() as any).grid !== false) drawGrid(ctx,w,h); // default on unless explicitly false
     drawSubnets(ctx);
+  // Reset label aggregator for this frame
+  for (const k of Object.keys(linkLabelAgg)) delete linkLabelAgg[k];
   const now = performance.now();
   if (lastTs===0) lastTs = now;
   // Advance shared animation frame for all passes
@@ -720,6 +754,7 @@ export function createRenderer(deps: () => RenderDeps & { grid?: boolean }) {
   drawSubnetSubnetLinks(ctx);
     drawMembershipLinks(ctx);
   drawSubnetServiceLinks(ctx);
+    drawAggregatedLinkLabels(ctx);
     drawPeers(ctx);
     drawSelection(ctx);
   drawHoverSubnetGhost(ctx); // no-op now

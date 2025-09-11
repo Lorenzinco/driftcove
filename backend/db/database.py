@@ -205,7 +205,7 @@ class Database:
                 INSERT INTO subnets (name, subnet, description, x, y, width, height, rgba)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (subnet.name,subnet.subnet,subnet.description,subnet.x,subnet.y,subnet.width,subnet.height,subnet.rgba))
-            logging.error(f"Created subnet {subnet} in database.")
+            logging.info(f"Created subnet {subnet} in database.")
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while creating subnet: {e}")
         return
