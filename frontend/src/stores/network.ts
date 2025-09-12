@@ -1,35 +1,29 @@
+import type { Link, Peer, ServiceInfo, Subnet, Tool } from '@/types/network'
 import { defineStore } from 'pinia'
-import type { Peer, Subnet, Link, Tool, ServiceInfo } from '@/types/network'
 
 // Local helper type for service info (embedded inside Peer.services)
 
-function uid(prefix = 'id') { return prefix + Math.random().toString(36).slice(2, 9) }
+function uid (prefix = 'id') {
+  return prefix + Math.random().toString(36).slice(2, 9)
+}
 
 export const useNetworkStore = defineStore('network', {
-    state: () => ({
-    peers: [ { id: uid('p_'), name: 'Peer 1', ip: '10.0.1.10', subnetId: null, x: 540, y: 300, public: true, services: {}, host: false, rx: 0, tx: 0, lastHandshake: 0 } as Peer ],
-        subnets: [ { id: uid('s_'), name: 'Office LAN', cidr: '10.0.1.0/24', x: 520, y: 300, width: 360, height: 240, rgba: 0x00FF00E5 } as Subnet ],
-        links: [] as Link[],
-
-
+  state: () => ({
+    peers: [{ id: uid('p_'), name: 'Peer 1', ip: '10.0.1.10', subnetId: null, x: 540, y: 300, public: true, services: {}, host: false, rx: 0, tx: 0, lastHandshake: 0 } as Peer],
+    subnets: [{ id: uid('s_'), name: 'Office LAN', cidr: '10.0.1.0/24', x: 520, y: 300, width: 360, height: 240, rgba: 0x00FF00E5 } as Subnet],
+    links: [] as Link[],
     // selection.id semantics for type==='link': stores a pair key "aId::bId" (sorted) representing ALL links between those two peers
-    selection: null as null | { type: 'peer' | 'subnet' | 'link', name:string, id: string },
-        tool: 'select' as Tool,
-
-
+    selection: null as null | { type: 'peer' | 'subnet' | 'link', name: string, id: string },
+    tool: 'select' as Tool,
     pan: { x: 0, y: 0, dragging: false, sx: 0, sy: 0 },
     zoom: 1,
-
-
-        grid: true,
-        hoverPeerId: null as string | null,
-        hoverSubnetId: null as string | null,
-
-
+    grid: true,
+    hoverPeerId: null as string | null,
+    hoverSubnetId: null as string | null,
     inspectorOpen: true,
     peerDetailsRequestId: null as string | null,
     peerDetailsRequestVersion: 0,
-    }),
+  }),
 
     getters: {
         selectedPeer(state) {

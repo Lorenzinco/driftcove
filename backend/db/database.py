@@ -238,7 +238,7 @@ class Database:
             raise Exception(f"An error occurred while updating subnet coordinates, size and color: {e}")
         return
     
-    def get_peer_by_username(self, username: str) -> Peer:
+    def get_peer_by_username(self, username: str) -> Peer | None:
         """
         This function returns a Peer object by its username.
         If the peer does not exist, it will return None.
@@ -572,7 +572,7 @@ class Database:
             raise Exception(f"An error occurred while getting service by name: {e}")
         return None
     
-    def get_service_host(self, service: Service) -> Peer:
+    def get_service_host(self, service: Service) -> Peer | None:
         """
         This function returns the peer that is hosting the service.
         It will return a Peer object.

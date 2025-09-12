@@ -1,8 +1,8 @@
-import axios from 'axios'
 import type { AxiosInstance } from 'axios'
+import axios from 'axios'
 import { defineStore } from 'pinia'
-import { type Peer, type Subnet, type Link, type ServiceInfo} from '@/types/network'
 import { useNetworkStore } from '@/stores/network'
+import { type Peer,type Link, type ServiceInfo, type Subnet } from '@/types/network'
 
 // Types for backend data (new preferred format + backward compatibility)
 // New format (full subnet details bundled):
@@ -13,16 +13,26 @@ import { useNetworkStore } from '@/stores/network'
 // Legacy format (still supported for fallback):
 // { networks: [ { "10.0.0.0/24": [ peerObj, ... ] }, ... ], links: [...] }
 export interface RawService extends ServiceInfo { }
-export interface RawPeer { username: string; public_key: string; preshared_key?: string; address: string; x: number; y: number; services?: Record<string | number, RawService> }
+export interface RawPeer {
+  username: string
+  public_key: string
+  preshared_key?: string
+  address: string
+  x: number
+  y: number
+  services?: Record<string | number, RawService>
+}
 export interface RawSubnet { subnet: string; name: string; description?: string; x: number; y: number; width: number; height: number }
 export interface RawTopologyNew { networks: Array<{ subnet: RawSubnet; peers: RawPeer[] }>; links: Array<Record<string, any>> }
 export interface RawTopologyLegacy { networks: Array<Record<string, RawPeer[]>>; links: Array<Record<string, any>> }
 
-function resolveBaseURL() {
-	// Prefer explicit env var; fallback to same origin (dev: Vite proxy or direct port 8000)
-	const explicit = import.meta.env.VITE_API_BASE_URL as string | undefined
-	if (explicit) return explicit.replace(/\/$/, '')
-	// If running on :5173 (default Vite) assume backend at :8000 same host
+function resolveBaseURL () {
+  // Prefer explicit env var; fallback to same origin (dev: Vite proxy or direct port 8000)
+  const explicit = import.meta.env.VITE_API_BASE_URL as string | undefined
+  if (explicit) {
+    return explicit.replace(/\/$/, '')
+  }
+  // If running on :5173 (default Vite) assume backend at :8000 same host
 	try {
 		const url = new URL(window.location.href)
 		if (url.port === '5173') { url.port = '8000' }
