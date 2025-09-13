@@ -18,10 +18,10 @@
             <span class="font-weight-medium">{{ peerA }} ↔ {{ peerB }}</span>
           </template>
           <template v-else-if="mode==='admin-p2p'">
-            <v-icon icon="mdi-shield-account" size="20" class="text-info" />
-            <v-icon icon="mdi-arrow-right" size="18" class="text-info" />
-            <v-icon icon="mdi-account" size="20" class="text-info" />
-            <span class="font-weight-medium">{{ peerA }} → {{ peerB }} (admin)</span>
+            <v-icon color="purple" icon="mdi-shield-account" size="20" />
+            <v-icon color="purple" icon="mdi-arrow-right" size="18" />
+            <v-icon color="purple" icon="mdi-account" size="20" />
+            <span class="font-weight-medium">(admin) {{ peerA }} → {{ peerB }}</span>
           </template>
           <template v-else-if="mode==='membership'">
             <v-icon icon="mdi-account" size="20" class="text-secondary" />
@@ -48,16 +48,16 @@
             <span class="font-weight-medium">{{ peerA }} ↔ {{ peerB }}</span>
           </template>
           <template v-else-if="mode==='admin-subnet-subnet'">
-            <v-icon icon="mdi-shield" size="18" class="text-info" />
-            <v-icon icon="mdi-arrow-right" size="16" class="text-info" />
-            <v-icon icon="mdi-lan" size="18" class="text-info" />
-            <span class="font-weight-medium">{{ peerA }} → {{ peerB }} (admin subnet)</span>
+            <v-icon color="purple" icon="mdi-shield" size="18" />
+            <v-icon color="purple" icon="mdi-arrow-right" size="16" />
+            <v-icon color="purple" icon="mdi-lan" size="18" />
+            <span class="font-weight-medium">{{ peerA }} → {{ peerB }} (admin of this peer)</span>
           </template>
           <template v-else-if="mode==='admin-peer-subnet'">
-            <v-icon icon="mdi-shield-account" size="18" class="text-info" />
-            <v-icon icon="mdi-arrow-right" size="16" class="text-info" />
-            <v-icon icon="mdi-lan" size="18" class="text-info" />
-            <span class="font-weight-medium">{{ peerA }} → {{ peerB }} (admin subnet)</span>
+            <v-icon color="purple" icon="mdi-shield-account" size="18" />
+            <v-icon color="purple" icon="mdi-arrow-right" size="16" />
+            <v-icon color="purple" icon="mdi-lan" size="18" />
+            <span class="font-weight-medium">{{ peerA }} → {{ peerB }}</span>
           </template>
           <template v-else-if="mode==='subnet-service'">
             <v-icon icon="mdi-server" size="18" class="text-primary" />
@@ -73,11 +73,11 @@
           </template>
         </div>
   <p v-if="mode==='p2p'">Are you sure you want to remove this peer-to-peer link? Unrestricted traffic between these peers will stop.</p>
-  <p v-else-if="mode==='admin-p2p'">Remove this admin-directed link? Elevated admin privileges from the source will no longer apply to the target.</p>
-  <p v-else-if="mode==='membership'">Are you sure you want to remove this membership link? This peer will lose access within the subnet.</p>
+  <p v-else-if="mode==='admin-p2p'">Remove this directed admin link? '{{ peerA }}' loses unrestricted initiation to '{{ peerB }}'.</p>
+  <p v-else-if="mode==='membership'">Are you sure you want to remove this membership link? '{{ peerB }}' members will lose unrestrained initiation with '{{ peerA }}'.</p>
   <p v-else-if="mode==='subnet-subnet'">Are you sure you want to remove this subnet-to-subnet link? Traffic between these subnets will be blocked.</p>
-  <p v-else-if="mode==='admin-subnet-subnet'">Remove this admin subnet directed link? Admin members will lose unrestricted initiation to the target subnet.</p>
-  <p v-else-if="mode==='admin-peer-subnet'">Remove this admin peer → subnet link? Peer loses unrestricted initiation to members of the subnet.</p>
+  <p v-else-if="mode==='admin-subnet-subnet'">Remove this admin subnet directed link? '{{ peerA }}' members will lose unrestricted initiation to the target subnet.</p>
+  <p v-else-if="mode==='admin-peer-subnet'">Remove this admin peer → subnet link? '{{ peerA }}' loses unrestricted initiation to '{{ peerB }}' members.</p>
   <p v-else-if="mode==='subnet-service'">Are you sure you want to remove this service-to-subnet link? Peers in the subnet will lose access to the service.</p>
   <p v-else>Are you sure you want to disconnect this service link? Access to the service will be revoked.</p>
         <v-alert v-if="mode==='p2p' && problematic" type="warning" density="compact" class="mt-2" text="This p2p link is problematic because a service link also exists between a host and this peer." />
@@ -92,22 +92,39 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import type { Link } from '@/types/network';
+  import type { Link } from '@/types/network'
+  import { computed } from 'vue'
 
-interface Props { modelValue: boolean; link: Link|null; mode: 'p2p'|'admin-p2p'|'membership'|'service-host'|'service-consumer'|'service-generic'|'subnet-subnet'|'admin-subnet-subnet'|'admin-peer-subnet'|'subnet-service'|''; peerA?: string; peerB?: string; serviceName?: string; problematic?: boolean; loading?: boolean }
-const props = defineProps<Props>();
-const emit = defineEmits<{ (e:'update:modelValue', v:boolean):void; (e:'confirm'):void }>();
+  interface Props {
+    modelValue: boolean
+    link: Link | null
+    mode: 'p2p' | 'admin-p2p' | 'membership' | 'service-host' | 'service-consumer' | 'service-generic' | 'subnet-subnet' | 'admin-subnet-subnet' | 'admin-peer-subnet' | 'subnet-service' | ''
+    peerA?: string
+    peerB?: string
+    serviceName?: string
+    problematic?: boolean
+    loading?: boolean
+  }
+  const props = defineProps<Props>()
+  const emit = defineEmits<{
+    (e: 'update:modelValue', v: boolean): void
+    (e: 'confirm'): void
+  }>()
+  console.log(props)
 
-const internal = computed({ get:()=>props.modelValue, set:(v)=> emit('update:modelValue', v) });
-const peerA = computed(()=> props.peerA || '');
-const peerB = computed(()=> props.peerB || '');
-const serviceName = computed(()=> props.serviceName || '');
-const problematic = computed(()=> !!props.problematic);
-const loading = computed(()=> !!props.loading);
+  const internal = computed({ get: () => props.modelValue, set: v => emit('update:modelValue', v) })
+  const peerA = computed(() => props.peerA || '')
+  const peerB = computed(() => props.peerB || '')
+  const serviceName = computed(() => props.serviceName || '')
+  const problematic = computed(() => !!props.problematic)
+  const loading = computed(() => !!props.loading)
 
-function close(){ emit('update:modelValue', false); }
-function emitConfirm(){ emit('confirm'); }
+  function close () {
+    emit('update:modelValue', false)
+  }
+  function emitConfirm () {
+    emit('confirm')
+  }
 </script>
 
 <style scoped>
