@@ -63,10 +63,44 @@ function resolveBaseURL() {
   }
 }
 
+// Runtime token holder (memory-only, no persistence for security)
+let runtimeApiToken: string | null = null;
+
 let client: AxiosInstance | null = null;
 function getClient() {
   if (!client) {
     client = axios.create({ baseURL: resolveBaseURL(), timeout: 10000 });
+    // Attach interceptor to always inject latest token
+    client.interceptors.request.use((config) => {
+      if (runtimeApiToken) {
+        config.headers = config.headers || {};
+        (config.headers as any).Authorization = `Bearer ${runtimeApiToken}`;
+      }
+      return config;
+    });
+    // Global 401 handling: clear in-memory token and redirect to root
+    client.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error?.response?.status === 401) {
+          runtimeApiToken = null;
+          try {
+            // Access store (may fail if not yet instantiated)
+            const store = useBackendInteractionStore();
+            store.apiToken = "";
+          } catch {
+            /* ignore */
+          }
+          if (client) {
+            delete client.defaults.headers.common["Authorization"];
+          }
+          if (window.location.pathname !== "/") {
+            window.location.replace("/");
+          }
+        }
+        return Promise.reject(error);
+      },
+    );
   }
   return client;
 }
@@ -90,8 +124,20 @@ export const useBackendInteractionStore = defineStore("backendInteraction", {
     >,
     // Baseline topology signature (set after successful fetch)
     lastFetchedTopologySig: null as string | null,
+    // API token (memory-only, not persisted across refresh)
+    apiToken: "",
   }),
   actions: {
+    setApiToken(token: string) {
+      this.apiToken = token || "";
+      runtimeApiToken = this.apiToken || null;
+      if (client && this.apiToken) {
+        client.defaults.headers.common["Authorization"] =
+          `Bearer ${this.apiToken}`;
+      } else if (client) {
+        delete client.defaults.headers.common["Authorization"];
+      }
+    },
     // Build a stable signature of current coordinates/sizes/colors to detect changes
     buildCoordinateSignature(): string {
       const net = useNetworkStore();
@@ -209,7 +255,7 @@ export const useBackendInteractionStore = defineStore("backendInteraction", {
       this.lastError = null;
       try {
         const { data } = await getClient().get<any>("/api/network/topology");
-        const rules = await this.getNftTableRules();
+        //const rules = await this.getNftTableRules();
         //console.log(rules)
         const topo = data.topology || {};
         const subnetsDict = topo.subnets || {};

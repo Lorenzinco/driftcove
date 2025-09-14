@@ -110,7 +110,6 @@
     (e: 'update:modelValue', v: boolean): void
     (e: 'confirm'): void
   }>()
-  console.log(props)
 
   const internal = computed({ get: () => props.modelValue, set: v => emit('update:modelValue', v) })
   const peerA = computed(() => props.peerA || '')

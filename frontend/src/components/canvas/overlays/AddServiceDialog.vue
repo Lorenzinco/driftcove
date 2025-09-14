@@ -128,8 +128,8 @@ const formRef = ref();
 // Protocol selection via two checkboxes
 const tcpSelected = ref(true);
 const udpSelected = ref(false);
-const protocolsSelected = computed<string[]>(() => {
-  const arr: string[] = [];
+const protocolsSelected = computed<("tcp" | "udp")[]>(() => {
+  const arr: ("tcp" | "udp")[] = [];
   if (tcpSelected.value) arr.push("tcp");
   if (udpSelected.value) arr.push("udp");
   return arr;
@@ -204,7 +204,7 @@ async function submit() {
   if (!validateLocal()) return;
   loading.value = true;
   try {
-    const protocolToSend =
+    const protocolToSend: "tcp" | "udp" | "both" =
       protocolsSelected.value.length === 2
         ? "both"
         : protocolsSelected.value[0];
