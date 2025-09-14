@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS services (
     name TEXT NOT NULL UNIQUE,
     department TEXT,
     port INTEGER NOT NULL,
+    protocol TEXT CHECK( protocol IN ('tcp', 'udp', 'both') ) DEFAULT 'tcp',
     description TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (id) REFERENCES peers(id) ON DELETE CASCADE,

@@ -101,9 +101,8 @@
               variant="tonal"
             >
               <div class="d-flex align-center">
-                This peer is not public in its subnet ({{ subnetDisplay }}).
-                No peer can generally reach this one, unless specified
-                links.
+                This peer is not public in its subnet ({{ subnetDisplay }}). No
+                peer can generally reach this one, unless specified links.
               </div>
               <template #append>
                 <v-btn
@@ -501,8 +500,11 @@
                           size="18"
                         />{{ svc.name || key }}
                       </v-list-item-title>
-                      <v-list-item-subtitle v-if="svc.port">
-                        Port: {{ svc.port }}
+                      <v-list-item-subtitle>
+                        <span v-if="svc.port">Port: {{ svc.port }}</span>
+                        <span v-if="svc.protocol">
+                          | Proto: {{ svc.protocol }}</span
+                        >
                         <span v-if="svc.department">
                           | Dept: {{ svc.department }}
                         </span>
@@ -510,6 +512,21 @@
                           | {{ svc.description }}
                         </span>
                       </v-list-item-subtitle>
+                      <template #append>
+                        <v-btn
+                          icon
+                          size="small"
+                          variant="text"
+                          color="error"
+                          :disabled="
+                            deleteDialog.loading &&
+                            deleteDialog.serviceKey === key
+                          "
+                          @click="promptDeleteService(key, svc.name || key)"
+                        >
+                          <v-icon icon="mdi-trash-can" />
+                        </v-btn>
+                      </template>
                     </v-list-item>
                   </v-list>
                   <div class="d-flex justify-end mt-2">
@@ -574,6 +591,38 @@
       :service-name="cutDialog.link?.serviceName"
       @confirm="performCut"
     />
+    <v-dialog v-model="deleteDialog.open" max-width="420">
+      <v-card>
+        <v-card-title class="text-subtitle-1"> Delete Service </v-card-title>
+        <v-card-text class="text-body-2">
+          Are you sure you want to delete service
+          <strong>{{ deleteDialog.serviceName }}</strong
+          >? This will remove all links to this service.
+          <v-alert
+            v-if="deleteDialog.error"
+            type="error"
+            density="compact"
+            class="mt-3"
+            :text="deleteDialog.error"
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn
+            variant="text"
+            @click="cancelDeleteService"
+            :disabled="deleteDialog.loading"
+            >Cancel</v-btn
+          >
+          <v-btn
+            color="error"
+            :loading="deleteDialog.loading"
+            @click="confirmDeleteService"
+            >Delete</v-btn
+          >
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -588,6 +637,21 @@ const showInfo = ref(false);
 const dlLoading = ref(false);
 const store = useNetworkStore();
 const backend = useBackendInteractionStore();
+
+// Delete service dialog state
+const deleteDialog = ref<{
+  open: boolean;
+  loading: boolean;
+  serviceKey: string;
+  serviceName: string;
+  error: string;
+}>({
+  open: false,
+  loading: false,
+  serviceKey: "",
+  serviceName: "",
+  error: "",
+});
 const open = computed({
   get: () => !!store.peerDetailsRequestId,
   set: (v) => {
@@ -734,6 +798,41 @@ const addServiceDialogRef = ref<InstanceType<typeof AddServiceDialog> | null>(
 );
 function openAddService(peerId: string) {
   addServiceDialogRef.value?.show(peerId);
+}
+
+// ----- Service Deletion Logic -----
+function promptDeleteService(serviceKey: string, serviceName: string) {
+  deleteDialog.value.open = true;
+  deleteDialog.value.loading = false;
+  deleteDialog.value.serviceKey = serviceKey;
+  deleteDialog.value.serviceName = serviceName;
+  deleteDialog.value.error = "";
+}
+
+function cancelDeleteService() {
+  if (deleteDialog.value.loading) return;
+  deleteDialog.value.open = false;
+}
+
+async function confirmDeleteService() {
+  if (deleteDialog.value.loading) return;
+  deleteDialog.value.loading = true;
+  deleteDialog.value.error = "";
+  const name = deleteDialog.value.serviceName;
+  try {
+    const ok = await backend.deleteService(name);
+    if (!ok) {
+      deleteDialog.value.error =
+        backend.lastError || "Failed to delete service";
+      deleteDialog.value.loading = false;
+      return;
+    }
+    deleteDialog.value.open = false;
+  } catch (e: any) {
+    deleteDialog.value.error = e?.message || "Unexpected error";
+  } finally {
+    deleteDialog.value.loading = false;
+  }
 }
 
 async function recreateConfig() {

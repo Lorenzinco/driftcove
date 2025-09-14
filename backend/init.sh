@@ -58,18 +58,26 @@ nft list table inet dcv >/dev/null 2>&1 || nft add table inet dcv
 
 # Core sets
 nft 'add set inet dcv p2p_links       { type ipv4_addr . ipv4_addr; flags interval; }' 2>/dev/null || true
-nft 'add set inet dcv svc_guest       { type ipv4_addr . ipv4_addr . inet_service; flags interval; }' 2>/dev/null || true
-# Pair-only set used to accept ESTABLISHED service flows (port was checked at NEW)
-nft 'add set inet dcv svc_pairs       { type ipv4_addr . ipv4_addr; flags interval; }' 2>/dev/null || true
 nft 'add set inet dcv admin_links     { type ipv4_addr . ipv4_addr; flags interval; }' 2>/dev/null || true
 nft 'add set inet dcv admin_peer2cidr { type ipv4_addr . ipv4_addr; flags interval; }' 2>/dev/null || true
 # Panic drop set (no timeout/dynamic for container kernels)
 nft 'add set inet dcv blocked_pairs   { type ipv4_addr . ipv4_addr; flags interval; }' 2>/dev/null || true
 
+# Per-protocol service sets
+nft 'add set inet dcv svc_guest_tcp { type ipv4_addr . ipv4_addr . inet_service; flags interval; }' 2>/dev/null || true
+nft 'add set inet dcv svc_guest_udp { type ipv4_addr . ipv4_addr . inet_service; flags interval; }' 2>/dev/null || true
+# Pair-only sets used to accept ESTABLISHED service flows (port was checked at NEW)
+nft 'add set inet dcv svc_pairs_tcp { type ipv4_addr . ipv4_addr; flags interval; }' 2>/dev/null || true
+nft 'add set inet dcv svc_pairs_udp { type ipv4_addr . ipv4_addr; flags interval; }' 2>/dev/null || true
+
+# (Optional) retire legacy combined sets if they exist
+nft 'delete set inet dcv svc_guest' 2>/dev/null || true
+nft 'delete set inet dcv svc_pairs' 2>/dev/null || true
+
 # Chains (idempotent)
 nft 'add chain inet dcv input   { type filter hook input   priority 0; policy accept; }' 2>/dev/null || true
 nft 'add chain inet dcv forward { type filter hook forward priority 0; policy accept; }' 2>/dev/null || true
-nft 'add chain inet dcv fwd_est'   2>/dev/null || true   # <-- NEW: holds EST/REL rules
+nft 'add chain inet dcv fwd_est'   2>/dev/null || true   # holds EST/REL rules
 nft 'add chain inet dcv wg'        2>/dev/null || true
 nft 'add chain inet dcv wg_base'   2>/dev/null || true
 nft 'add chain inet dcv wg_allow'  2>/dev/null || true
@@ -79,9 +87,9 @@ nft 'flush chain inet dcv input' 2>/dev/null || true
 # Replies fast-path
 nft 'add rule inet dcv input ct state established,related accept' 2>/dev/null || true
 # Allow ping to the server tunnel IP
-nft "add rule inet dcv input iifname \"${WG_IF}\" ip daddr ${WG_ADDRESS_CIDR%%/*} icmp type echo-request accept" 2>/dev/null || true
+nft "add rule inet dcv input iifname \"$WG_IF\" ip daddr ${WG_ADDRESS_CIDR%%/*} icmp type echo-request accept" 2>/dev/null || true
 # (optional) SSH on wg interface:
-# nft "add rule inet dcv input iifname \"${WG_IF}\" ip daddr ${WG_ADDRESS_CIDR%%/*} tcp dport 22 accept" 2>/dev/null || true
+# nft "add rule inet dcv input iifname \"$WG_IF\" ip daddr ${WG_ADDRESS_CIDR%%/*} tcp dport 22 accept" 2>/dev/null || true
 
 # --- FORWARD (static: drop -> jump fwd_est -> goto wg) ---
 nft 'flush chain inet dcv forward' 2>/dev/null || true
@@ -93,16 +101,17 @@ nft 'add rule inet dcv forward ip saddr . ip daddr @blocked_pairs drop' 2>/dev/n
 nft 'add rule inet dcv forward jump fwd_est' 2>/dev/null || true
 
 # 2) Hook only WG traffic into wg chain (leave these LAST)
-nft "add rule inet dcv forward iifname \"${WG_IF}\" goto wg" 2>/dev/null || true
-nft "add rule inet dcv forward oifname \"${WG_IF}\" goto wg" 2>/dev/null || true
+nft "add rule inet dcv forward iifname \"$WG_IF\" goto wg" 2>/dev/null || true
+nft "add rule inet dcv forward oifname \"$WG_IF\" goto wg" 2>/dev/null || true
 
 # --- FWD_EST: constrained EST/REL acceptance by original tuple ---
 nft 'flush chain inet dcv fwd_est' 2>/dev/null || true
 nft 'add rule inet dcv fwd_est ct state established,related ct original ip saddr . ct original ip daddr @admin_peer2cidr accept' 2>/dev/null || true
 nft 'add rule inet dcv fwd_est ct state established,related ct original ip saddr . ct original ip daddr @admin_links     accept' 2>/dev/null || true
 nft 'add rule inet dcv fwd_est ct state established,related ct original ip saddr . ct original ip daddr @p2p_links       accept' 2>/dev/null || true
-# For services: accept established by src/dst pair (port was enforced at NEW via svc_guest)
-nft 'add rule inet dcv fwd_est ct state established,related ct original ip saddr . ct original ip daddr @svc_pairs       accept' 2>/dev/null || true
+# For services: per-protocol
+nft 'add rule inet dcv fwd_est ct state established,related ct original l4proto tcp ct original ip saddr . ct original ip daddr @svc_pairs_tcp accept' 2>/dev/null || true
+nft 'add rule inet dcv fwd_est ct state established,related ct original l4proto udp ct original ip saddr . ct original ip daddr @svc_pairs_udp accept' 2>/dev/null || true
 
 # --- wg dispatch: base -> allow -> drop ---
 nft 'flush chain inet dcv wg' 2>/dev/null || true
@@ -115,7 +124,9 @@ nft 'flush chain inet dcv wg_base' 2>/dev/null || true
 nft 'add rule inet dcv wg_base ip saddr . ip daddr @admin_peer2cidr ct state new accept' 2>/dev/null || true
 nft 'add rule inet dcv wg_base ip saddr . ip daddr @admin_links   ct state new accept' 2>/dev/null || true
 nft 'add rule inet dcv wg_base ip saddr . ip daddr @p2p_links     ct state new accept' 2>/dev/null || true
-nft 'add rule inet dcv wg_base meta l4proto { tcp, udp } ip saddr . ip daddr . th dport @svc_guest ct state new accept' 2>/dev/null || true
+# Per-protocol service NEW accepts
+nft 'add rule inet dcv wg_base meta l4proto tcp ip saddr . ip daddr . th dport @svc_guest_tcp ct state new accept' 2>/dev/null || true
+nft 'add rule inet dcv wg_base meta l4proto udp ip saddr . ip daddr . th dport @svc_guest_udp ct state new accept' 2>/dev/null || true
 
 # --- wg_allow: NEW rule bucket (left empty here; backend adds per-subnet/per-link NEW rules) ---
 nft 'flush chain inet dcv wg_allow' 2>/dev/null || true
@@ -124,9 +135,9 @@ nft 'flush chain inet dcv wg_allow' 2>/dev/null || true
 nft list table ip nat >/dev/null 2>&1 || nft add table ip nat
 nft 'add chain ip nat prerouting  { type nat hook prerouting  priority -100; }' 2>/dev/null || true
 nft 'add chain ip nat postrouting { type nat hook postrouting priority  100; }' 2>/dev/null || true
-nft "delete rule ip nat postrouting oifname \"${WAN_IF}\" ip saddr ${WG_DEFAULT_SUBNET} counter masquerade" 2>/dev/null || true
-nft "add rule ip nat postrouting oifname \"${WAN_IF}\" ip saddr ${WG_DEFAULT_SUBNET} counter masquerade"
-
+# Best-effort delete (ignored if unsupported)
+nft "delete rule ip nat postrouting oifname \"$WAN_IF\" ip saddr $WG_DEFAULT_SUBNET counter masquerade" 2>/dev/null || true
+nft "add rule ip nat postrouting oifname \"$WAN_IF\" ip saddr $WG_DEFAULT_SUBNET counter masquerade"
 
 
 echo "[init] Ensuring sqlite db folder..."

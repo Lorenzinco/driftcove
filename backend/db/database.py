@@ -415,7 +415,7 @@ class Database:
         services = []
         try:
             cur = self.conn.execute("""
-                SELECT p.username, p.public_key, p.preshared_key, p.address, p.x, p.y, s.name, s.department, s.port
+                SELECT p.username, p.public_key, p.preshared_key, p.address, p.x, p.y
                 FROM peers p
                 JOIN services s ON p.id = s.id
             """)
@@ -467,9 +467,9 @@ class Database:
 
             # Insert into services table using the same ID
             self.conn.execute("""
-                INSERT INTO services (id, name, department, port, description)
-                VALUES (?, ?, ?, ?, ?)
-            """, (peer_id, service.name, service.department, service.port, service.description))
+                INSERT INTO services (id, name, department, port, description, protocol)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (peer_id, service.name, service.department, service.port, service.description, service.protocol))
 
             return service.name
 
@@ -521,7 +521,7 @@ class Database:
         services = []
         try:
             cur = self.conn.execute("""
-                SELECT s.name, s.department, s.description, s.port
+                SELECT s.name, s.department, s.description, s.port, s.protocol
                 FROM services s
                 JOIN peers_services ps ON s.id = ps.service_id
                 JOIN peers p ON ps.peer_id = p.id
@@ -543,12 +543,12 @@ class Database:
         services = []
         try:
             cur = self.conn.execute("""
-                SELECT name, department, port, description
+                SELECT name, department, port, description, protocol
                 FROM Services
             """)
             services_rows = cur.fetchall()
             for row in services_rows:
-                services.append(Service(name=row[0], department=row[1], port=row[2], description=row[3]))
+                services.append(Service(name=row[0], department=row[1], port=row[2], description=row[3], protocol=row[4]))
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting all services: {e}")
         return services
@@ -560,13 +560,13 @@ class Database:
         """
         try:
             cur = self.conn.execute("""
-                SELECT name, department, port, description
+                SELECT name, department, port, description, protocol
                 FROM Services
                 WHERE name = ?
             """, (name,))
             row = cur.fetchone()
             if row:
-                return Service(name=row[0], department=row[1], port=row[2], description=row[3])
+                return Service(name=row[0], department=row[1], port=row[2], description=row[3], protocol=row[4])
 
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting service by name: {e}")
@@ -598,14 +598,14 @@ class Database:
         services = []
         try:
             cur = self.conn.execute("""
-                SELECT s.name, s.department, s.port, s.description
+                SELECT s.name, s.department, s.port, s.description, s.protocol
                 FROM services s
                 JOIN peers p ON s.id = p.id
                 WHERE p.public_key = ?
             """, (peer.public_key,))
             services_rows = cur.fetchall()
             for row in services_rows:
-                services.append(Service(name=row[0], department=row[1], port=row[2], description=row[3]))
+                services.append(Service(name=row[0], department=row[1], port=row[2], description=row[3], protocol=row[4]))
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting services by host: {e}")
         return services
@@ -639,7 +639,7 @@ class Database:
         services = []
         try:
             cur = self.conn.execute("""
-                SELECT s.name, s.department, s.port, s.description
+                SELECT s.name, s.department, s.port, s.description, s.protocol
                 FROM services s
                 JOIN peers_services ps ON s.id = ps.service_id AND s.port = ps.service_port
                 JOIN peers p ON ps.peer_id = p.id
@@ -647,7 +647,7 @@ class Database:
             """, (peer.public_key,))
             services_rows = cur.fetchall()
             for row in services_rows:
-                services.append(Service(name=row[0], department=row[1], port=row[2], description=row[3]))
+                services.append(Service(name=row[0], department=row[1], port=row[2], description=row[3], protocol=row[4]))
         except sqlite3.Error as e:
             raise Exception(f"An error occurred while getting peer's services: {e}")
         return services
@@ -709,7 +709,7 @@ class Database:
         links = {}
         try:
             cur = self.conn.execute("""
-                SELECT p.username, p.public_key, p.preshared_key, p.address, p.x, p.y, s.name, s.department, s.port, s.description
+                SELECT p.username, p.public_key, p.preshared_key, p.address, p.x, p.y, s.name, s.department, s.port, s.description, s.protocol
                 FROM peers_services ps
                 JOIN peers p ON ps.peer_id = p.id
                 JOIN services s ON ps.service_id = s.id AND ps.service_port = s.port
@@ -717,7 +717,7 @@ class Database:
             links_rows = cur.fetchall()
             for row in links_rows:
                 peer = Peer(username=row[0], public_key=row[1], preshared_key=row[2], address=row[3], x=row[4], y=row[5])
-                service = Service(name=row[6], department=row[7], port=row[8], description=row[9])
+                service = Service(name=row[6], department=row[7], port=row[8], description=row[9], protocol=row[10])
                 if service.name not in links:
                     links[service.name] = []
                 if peer not in links[service.name]:
@@ -859,7 +859,7 @@ class Database:
         try:
             cur = self.conn.execute("""
                 SELECT s.subnet, s.name, s.description, s.x, s.y, s.width, s.height, s.rgba,
-                       sv.name, sv.department, sv.port, sv.description
+                       sv.name, sv.department, sv.port, sv.description, sv.protocol
                 FROM subnets_services ss
                 JOIN subnets s ON ss.subnet = s.subnet
                 JOIN services sv ON ss.service_id = sv.id AND ss.service_port = sv.port
@@ -867,7 +867,7 @@ class Database:
             links_rows = cur.fetchall()
             for row in links_rows:
                 subnet = Subnet(subnet=row[0], name=row[1], description=row[2], x=row[3], y=row[4], width=row[5], height=row[6], rgba=row[7])
-                service = Service(name=row[8], department=row[9], port=row[10], description=row[11])
+                service = Service(name=row[8], department=row[9], port=row[10], description=row[11], protocol=row[12])
                 if subnet.subnet not in links:
                     links[subnet.subnet] = []
                 if service not in links[subnet.subnet]:

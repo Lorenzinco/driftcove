@@ -36,7 +36,7 @@ def run_client(config: str, name: str):
             "--cap-add=NET_ADMIN",
             f"-v{config_path}:/etc/wireguard/wg0.conf",
             "linuxserver/wireguard", "bash", "-c",
-            "wg-quick up wg0 && sleep 10 && ping -c 3 10.128.0.3"
+            "wg-quick up wg0 && sleep 10 && ping -c 3 10.128.0.1"
         ], check=True)
 
 def main():
@@ -47,7 +47,8 @@ def main():
     cfg2 = create_peer("client2", "10.128.0.0/9")
 
     print("Running containers...")
-    run_client(cfg1, "client1")  # Will ping 10.128.0.3 inside the container
+    run_client(cfg1, "client1")
+    run_client(cfg2, "client2")
 
 if __name__ == "__main__":
     main()

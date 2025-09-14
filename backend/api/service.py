@@ -1,6 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-from backend.core.wireguard import generate_keys, apply_to_wg_config, remove_from_wg_config, generate_wg_config
-from backend.core.config import verify_token, settings
+from backend.core.config import verify_token
 from backend.core.lock import lock
 from backend.core.state_manager import state_manager
 from backend.core.database import db
@@ -13,7 +12,7 @@ router = APIRouter(tags=["service"])
 
 
 @router.post("/create",tags=["service"])
-def create_service(service_name:str, department:str, username:str, port:int, _: Annotated[str, Depends(verify_token)], description: str = ""):
+def create_service(service_name:str, department:str, username:str, port:int, protocol:str, _: Annotated[str, Depends(verify_token)], description: str = ""):
     """
     Creates a service, pairs it with an existing peer, the peer in question is identified by the address, the service will be created with the provided port. If the service already exists, nothing happens.
     If you wish for selected peers to be able to connect to the service, you need to use the connect endpoint.
@@ -32,16 +31,13 @@ def create_service(service_name:str, department:str, username:str, port:int, _: 
             subnets = db.get_peers_subnets(peer)
             if subnets is None or len(subnets) == 0:
                 raise HTTPException(status_code=404, detail="Peer is not in any subnet")
-            service = Service(username=username,
-                            public_key=peer.public_key,
-                            preshared_key=peer.preshared_key,
-                            address=peer.address,
-                            name=service_name,
-                            x=peer.x,
-                            y=peer.y,
+            if protocol not in ["tcp","udp","both"]:
+                raise HTTPException(status_code=400, detail="Protocol must be either 'tcp' or 'udp' or 'both'")
+            service = Service(name=service_name,
                             department=department,
                             port=port,
-                            description=description)
+                            description=description
+                            ,protocol=protocol)
             db.create_service(peer,service)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to create service: {e}")
@@ -58,11 +54,14 @@ def delete_service(service_name: str, _: Annotated[str, Depends(verify_token)]):
             service= db.get_service_by_name(service_name)
             if service is None:
                 raise HTTPException(status_code=404, detail="Service not found")
+            service_host = db.get_service_host(service)
+            if service_host is None:
+                raise HTTPException(status_code=404, detail="Service host not found")
             peers_linked = db.get_peers_linked_to_service(service)
             # Remove the service from the allowed IPs of the peers
             for peer in peers_linked:
                 logging.info(f"Removing service {service.name} from peer {peer.username}")
-                revoke_service(peer.address, service.address, service.port)
+                revoke_service(peer.address, service_host.address, service.port, proto=service.protocol)
             logging.info(f"Removing service {service.name} from the database")
             db.remove_service(service)
 
@@ -93,7 +92,7 @@ def service_connect(username: str, service_name: str, _: Annotated[str, Depends(
             
             db.add_link_from_peer_to_service(peer, service)
             logging.info(f"Connecting peer {peer.username} to service {service.name}")
-            grant_service(peer.address, host.address, service.port)
+            grant_service(peer.address, host.address, service.port, service.protocol)
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Connecting peer {username} to {service_name} failed: {e}")
@@ -125,7 +124,7 @@ def service_disconnect(username: str, service_name: str, _: Annotated[str, Depen
                 raise HTTPException(status_code=400, detail=f"Peer {username} is not connected to service {service_name}")
             
             logging.info(f"Disconnecting peer {peer.username} from service {service.name}")
-            revoke_service(peer.address, host.address, service.port)
+            revoke_service(peer.address, host.address, service.port, service.protocol)
             db.remove_link_from_peer_to_service(peer, service)
     
         except Exception as e:
@@ -152,7 +151,7 @@ def connect_subnet_to_service(subnet_address:str, service_name: str, _: Annotate
                 raise HTTPException(status_code=404, detail="Service host not found")
             
             db.add_link_from_subnet_to_service(subnet, service)
-            grant_subnet_service(subnet.subnet, host.address, service.port)
+            grant_subnet_service(subnet.subnet, host.address, service.port, service.protocol)
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to connect subnet {subnet_address} to service {service_name}: {e}")
@@ -178,7 +177,7 @@ def disconnect_subnet_from_service(subnet_address:str, service_name: str, _: Ann
                 raise HTTPException(status_code=404, detail="Service host not found")
             
             db.remove_link_from_subnet_to_service(subnet, service)
-            revoke_subnet_service(subnet.subnet, host.address, service.port)
+            revoke_subnet_service(subnet.subnet, host.address, service.port, service.protocol)
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to disconnect subnet {subnet_address} from service {service_name}: {e}")

@@ -1094,6 +1094,7 @@ export const useBackendInteractionStore = defineStore("backendInteraction", {
       department: string,
       port: number,
       description: string,
+      protocol: "tcp" | "udp" | "both",
     ) {
       try {
         this.lastError = null;
@@ -1107,6 +1108,7 @@ export const useBackendInteractionStore = defineStore("backendInteraction", {
               username,
               port,
               description,
+              protocol,
             },
           },
         );
@@ -1118,6 +1120,19 @@ export const useBackendInteractionStore = defineStore("backendInteraction", {
         return true;
       } catch (e: any) {
         this.lastError = e?.message || "Failed to create service";
+        return false;
+      }
+    },
+    async deleteService(serviceName: string) {
+      try {
+        this.lastError = null;
+        await getClient().delete("/api/service/delete", {
+          params: { service_name: serviceName },
+        });
+        await this.fetchTopology(true);
+        return true;
+      } catch (e: any) {
+        this.lastError = e?.message || "Failed to delete service";
         return false;
       }
     },

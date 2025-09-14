@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException, Depends
 from backend.core.config import verify_token
 from backend.core.database import db
 from backend.core.state_manager import state_manager
-from backend.core.wireguard import remove_from_wg_config
 from backend.core.lock import lock
 from backend.core.models import Subnet, Peer
 from backend.core.logger import logging
@@ -88,7 +87,7 @@ def delete_subnet(subnet: str, _: Annotated[str, Depends(verify_token)]):
     """
     with lock.write_lock(), state_manager.saved_state():
         try:
-            subnet_obj: Subnet = db.get_subnet_by_address(subnet)
+            subnet_obj: Subnet|None = db.get_subnet_by_address(subnet)
             if subnet_obj is None:
                 raise HTTPException(status_code=404, detail="Subnet not found")
             helper_remove_subnet(subnet_obj)
@@ -105,7 +104,7 @@ def delete_subnet_with_peers(subnet: str, token: Annotated[str, Depends(verify_t
     """
     with lock.write_lock(), state_manager.saved_state():
         try:
-            subnet_obj: Subnet = db.get_subnet_by_address(subnet)
+            subnet_obj: Subnet|None = db.get_subnet_by_address(subnet)
             if subnet_obj is None:
                 raise HTTPException(status_code=404, detail="Subnet not found")
 
@@ -135,7 +134,7 @@ def delete_subnet_with_peers(subnet: str, token: Annotated[str, Depends(verify_t
             for service in service_links.get(subnet_obj.subnet, []):
                 host = db.get_service_host(service)
                 if host:
-                    revoke_subnet_service(subnet_obj.subnet, host.address, service.port)
+                    revoke_subnet_service(subnet_obj.subnet, host.address, service.port, service.protocol)
                 db.remove_link_from_subnet_to_service(subnet_obj, service)
 
             # 3) Remove cross-subnet(public) links (both directions)
@@ -202,11 +201,11 @@ def disconnect_peer_from_subnet(username: str, subnet: str, _: Annotated[str, De
     """
     with lock.write_lock(), state_manager.saved_state():
         try:
-            peer: Peer = db.get_peer_by_username(username)
+            peer: Peer|None = db.get_peer_by_username(username)
             if peer is None:
                 raise HTTPException(status_code=404, detail="Peer not found")
 
-            subnet_obj: Subnet = db.get_subnet_by_address(subnet)
+            subnet_obj: Subnet|None = db.get_subnet_by_address(subnet)
             if subnet_obj is None:
                 raise HTTPException(status_code=404, detail="Subnet not found")
 
@@ -252,11 +251,11 @@ def admin_disconnect_peer_from_subnet(admin_username: str, subnet: str, _: Annot
     """
     with lock.write_lock(), state_manager.saved_state():
         try:
-            peer: Peer = db.get_peer_by_username(admin_username)
+            peer: Peer|None = db.get_peer_by_username(admin_username)
             if peer is None:
                 raise HTTPException(status_code=404, detail="Peer not found")
 
-            subnet_obj: Subnet = db.get_subnet_by_address(subnet)
+            subnet_obj: Subnet|None = db.get_subnet_by_address(subnet)
             if subnet_obj is None:
                 raise HTTPException(status_code=404, detail="Subnet not found")
 
@@ -302,7 +301,7 @@ def helper_remove_subnet(subnet: Subnet):
         for service in service_links.get(subnet.subnet, []):
             host = db.get_service_host(service)
             if host:
-                revoke_subnet_service(subnet.subnet, host.address, service.port)
+                revoke_subnet_service(subnet.subnet, host.address, service.port, service.protocol)
             db.remove_link_from_subnet_to_service(subnet, service)
 
         # 3) Remove cross-subnet(public) links (both directions)

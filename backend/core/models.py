@@ -8,6 +8,7 @@ class Service(BaseModel):
     name: str
     department: str
     description: str = ""
+    protocol: str = "tcp"
 
     def from_json(self, data: dict):
         self.port = data.get("port", self.port)

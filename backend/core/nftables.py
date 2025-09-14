@@ -95,16 +95,20 @@ def ensure_table_and_chain(wg_if: str = "wg0", wg_server_ip: str = "10.128.0.1")
 
     # Sets
     _nft_try("add set inet dcv p2p_links { type ipv4_addr . ipv4_addr; flags interval; }")
-    _nft_try("add set inet dcv svc_guest { type ipv4_addr . ipv4_addr . inet_service; flags interval; }")
-    _nft_try("add set inet dcv svc_pairs { type ipv4_addr . ipv4_addr; flags interval; }")  # for EST service flows
     _nft_try("add set inet dcv admin_links { type ipv4_addr . ipv4_addr; flags interval; }")
     _nft_try("add set inet dcv admin_peer2cidr { type ipv4_addr . ipv4_addr; flags interval; }")
-    _nft_try("add set inet dcv blocked_pairs { type ipv4_addr . ipv4_addr; flags interval; }")  # panic drop
+    _nft_try("add set inet dcv blocked_pairs { type ipv4_addr . ipv4_addr; flags interval; }")
+
+    # Per-protocol service sets
+    _nft_try("add set inet dcv svc_guest_tcp { type ipv4_addr . ipv4_addr . inet_service; flags interval; }")
+    _nft_try("add set inet dcv svc_guest_udp { type ipv4_addr . ipv4_addr . inet_service; flags interval; }")
+    _nft_try("add set inet dcv svc_pairs_tcp { type ipv4_addr . ipv4_addr; flags interval; }")
+    _nft_try("add set inet dcv svc_pairs_udp { type ipv4_addr . ipv4_addr; flags interval; }")
 
     # Chains
     _nft_try('add chain inet dcv input   { type filter hook input   priority 0; policy accept; }')
     _nft_try('add chain inet dcv forward { type filter hook forward priority 0; policy accept; }')
-    _nft_try('add chain inet dcv fwd_est')   # <--- NEW: holds all EST/REL rules
+    _nft_try('add chain inet dcv fwd_est')
     _nft_try('add chain inet dcv wg')
     _nft_try('add chain inet dcv wg_base')
     _nft_try('add chain inet dcv wg_allow')
@@ -129,8 +133,11 @@ def ensure_table_and_chain(wg_if: str = "wg0", wg_server_ip: str = "10.128.0.1")
              'ct original ip saddr . ct original ip daddr @admin_links accept')
     _nft_try('add rule inet dcv fwd_est ct state established,related '
              'ct original ip saddr . ct original ip daddr @p2p_links accept')
-    _nft_try('add rule inet dcv fwd_est ct state established,related '
-             'ct original ip saddr . ct original ip daddr @svc_pairs accept')
+    # Per-proto EST/REL for service flows
+    _nft_try('add rule inet dcv fwd_est ct state established,related ct original l4proto tcp '
+             'ct original ip saddr . ct original ip daddr @svc_pairs_tcp accept')
+    _nft_try('add rule inet dcv fwd_est ct state established,related ct original l4proto udp '
+             'ct original ip saddr . ct original ip daddr @svc_pairs_udp accept')
 
     # WG pipeline
     # base -> allow -> drop
@@ -144,23 +151,25 @@ def ensure_table_and_chain(wg_if: str = "wg0", wg_server_ip: str = "10.128.0.1")
     _nft_try('add rule inet dcv wg_base ip saddr . ip daddr @admin_peer2cidr ct state new accept')
     _nft_try('add rule inet dcv wg_base ip saddr . ip daddr @admin_links   ct state new accept')
     _nft_try('add rule inet dcv wg_base ip saddr . ip daddr @p2p_links     ct state new accept')
-    _nft_try('add rule inet dcv wg_base meta l4proto { tcp, udp } ip saddr . ip daddr . th dport @svc_guest ct state new accept')
+    _nft_try('add rule inet dcv wg_base meta l4proto tcp ip saddr . ip daddr . th dport @svc_guest_tcp ct state new accept')
+    _nft_try('add rule inet dcv wg_base meta l4proto udp ip saddr . ip daddr . th dport @svc_guest_udp ct state new accept')
 
     # Rule-based NEW acceptance lives here; we’ll add per-subnet/per-link rules to wg_allow
     _nft_try('flush chain inet dcv wg_allow')
 
 # ---------- Service helpers (peer→host) ----------
 
-def _svc_pair_has_other_ports(src_ip: str, dst_ip: str) -> bool:
+def _svc_pair_has_other_ports(src_ip: str, dst_ip: str, proto: str) -> bool:
+    setname = "svc_guest_tcp" if proto.lower() == "tcp" else "svc_guest_udp"
     try:
-        out = subprocess.check_output([NFT_BIN, "-j", "list", "set", "inet", "dcv", "svc_guest"], text=True)
+        out = subprocess.check_output([NFT_BIN, "-j", "list", "set", "inet", "dcv", setname], text=True)
         data = json.loads(out)
         for el in data.get("set", {}).get("elem", []):
             tup = el.get("elem", [])
             if len(tup) == 3 and tup[0] == src_ip and tup[1] == dst_ip:
                 return True
     except Exception as e:
-        logging.debug("svc_guest query failed: %s", e)
+        logging.debug("%s query failed: %s", setname, e)
     return False
 
 # ---------- Subnet primitives ----------
@@ -188,10 +197,14 @@ def destroy_subnet(subnet_id: str, destroy_all_traffic_to_peers_inside: bool=Fal
     public  = f"subnet_{s}_public"
     # First, clean up any elements in pair sets that reference this subnet
     _purge_pair_set_for_subnet("p2p_links", subnet_id)
-    _purge_pair_set_for_subnet("svc_guest", subnet_id)
-    _purge_service_triples_for_subnet(subnet_id)
     _purge_pair_set_for_subnet("admin_links", subnet_id)
     _purge_pair_set_for_subnet("admin_peer2cidr", subnet_id)
+    # Clean service triples per-proto
+    _purge_service_triples_for_subnet(subnet_id, "svc_guest_tcp")
+    _purge_service_triples_for_subnet(subnet_id, "svc_guest_udp")
+    # Also clean per-proto svc_pairs pairs referencing this subnet
+    _purge_pair_set_for_subnet("svc_pairs_tcp", subnet_id)
+    _purge_pair_set_for_subnet("svc_pairs_udp", subnet_id)
 
     # Broad sweep via JSON: delete any rule in any chain that references either set
     try:
@@ -254,10 +267,10 @@ def _purge_pair_set_for_subnet(setname: str, cidr: str):
     except Exception:
         pass
 
-def _purge_service_triples_for_subnet(cidr: str):
-    """Remove svc_guest triples where src or dst is in the cidr (port ignored)."""
+def _purge_service_triples_for_subnet(cidr: str, setname: str):
+    """Remove service triples in the given set where src or dst is in the cidr (port ignored)."""
     try:
-        js = subprocess.check_output([NFT_BIN, "-j", "list", "set", "inet", "dcv", "svc_guest"], text=True)
+        js = subprocess.check_output([NFT_BIN, "-j", "list", "set", "inet", "dcv", setname], text=True)
         data = json.loads(js)
         net = ipaddress.ip_network(cidr, strict=False)
         for el in data.get("set", {}).get("elem", []):
@@ -266,7 +279,7 @@ def _purge_service_triples_for_subnet(cidr: str):
                 continue
             a, b, port = tup
             if (ipaddress.ip_address(a) in net) or (ipaddress.ip_address(b) in net):
-                _nft_try(f"delete element inet dcv svc_guest {{ {a} . {b} . {port} }}")
+                _nft_try(f"delete element inet dcv {setname} {{ {a} . {b} . {port} }}")
     except Exception:
         pass
 
@@ -298,10 +311,9 @@ def remove_p2p_link(a_ip: str, b_ip: str) -> None:
     _nft_try(f"delete element inet dcv p2p_links {{ {a_ip} . {b_ip} }}")
     _nft_try(f"delete element inet dcv p2p_links {{ {b_ip} . {a_ip} }}")
 
-
 def _purge_pair_set_for_ip(setname: str, ip: str):
     try:
-        js = subprocess.check_output(["nft","-j","list","set","inet","dcv",setname], text=True)
+        js = subprocess.check_output([NFT_BIN,"-j","list","set","inet","dcv",setname], text=True)
         data = json.loads(js)
         for el in data.get("set",{}).get("elem",[]):
             pair = el.get("elem",[])
@@ -314,44 +326,84 @@ def _purge_pair_set_for_ip(setname: str, ip: str):
 
 # ---------- Peer → Service links (peer-scoped) ----------
 
-def grant_service(src_ip: str, dst_ip: str, port: int) -> None:
-    _nft_try(f"add element inet dcv svc_guest {{ {src_ip} . {dst_ip} . {port} }}")
-    _nft_try(f"add element inet dcv svc_pairs {{ {src_ip} . {dst_ip} }}")  # for EST replies
+def grant_service(src_ip: str, dst_ip: str, port: int, proto: str = "both") -> None:
+    """
+    Grant a peer -> host service:
+      proto: "tcp" | "udp" | "both"
+    """
+    protos = ["tcp", "udp"] if proto == "both" else [proto.lower()]
+    for p in protos:
+        if p == "tcp":
+            _nft_try(f"add element inet dcv svc_guest_tcp {{ {src_ip} . {dst_ip} . {port} }}")
+            _nft_try(f"add element inet dcv svc_pairs_tcp {{ {src_ip} . {dst_ip} }}")  # for EST replies
+        elif p == "udp":
+            _nft_try(f"add element inet dcv svc_guest_udp {{ {src_ip} . {dst_ip} . {port} }}")
+            _nft_try(f"add element inet dcv svc_pairs_udp {{ {src_ip} . {dst_ip} }}")  # for EST replies
 
-def revoke_service(src_ip: str, dst_ip: str, port: int) -> None:
-    _nft_try(f"delete element inet dcv svc_guest {{ {src_ip} . {dst_ip} . {port} }}")
-    if not _svc_pair_has_other_ports(src_ip, dst_ip):
-        _nft_try(f"delete element inet dcv svc_pairs {{ {src_ip} . {dst_ip} }}")
+def revoke_service(src_ip: str, dst_ip: str, port: int, proto: str = "both") -> None:
+    """
+    Revoke a peer -> host service:
+      proto: "tcp" | "udp" | "both"
+    """
+    protos = ["tcp", "udp"] if proto == "both" else [proto.lower()]
+    for p in protos:
+        if p == "tcp":
+            _nft_try(f"delete element inet dcv svc_guest_tcp {{ {src_ip} . {dst_ip} . {port} }}")
+            if not _svc_pair_has_other_ports(src_ip, dst_ip, "tcp"):
+                _nft_try(f"delete element inet dcv svc_pairs_tcp {{ {src_ip} . {dst_ip} }}")
+        elif p == "udp":
+            _nft_try(f"delete element inet dcv svc_guest_udp {{ {src_ip} . {dst_ip} . {port} }}")
+            if not _svc_pair_has_other_ports(src_ip, dst_ip, "udp"):
+                _nft_try(f"delete element inet dcv svc_pairs_udp {{ {src_ip} . {dst_ip} }}")
 
 # ---------- Subnet → Service links (rule-based) ----------
 
-def grant_subnet_service(subnet_id: str, dst_ip: str, port: int):
+def grant_subnet_service(subnet_id: str, dst_ip: str, port: int, proto: str = "both"):
+    """
+    Allow members of subnet_id to reach dst_ip:port over proto ("tcp"|"udp"|"both").
+    """
     s = _slug(subnet_id)
     members = f"subnet_{s}_members"
+    protos = ["tcp", "udp"] if proto == "both" else [proto.lower()]
 
-    # NEW acceptance (wg_allow)
-    _delete_rule_by_match("wg_allow",
-        rf"meta l4proto \{{ tcp, udp \}} ip saddr @{members} ip daddr {dst_ip} th dport {port} ct state new accept")
-    _nft_try(
-        f"add rule inet dcv wg_allow meta l4proto {{ tcp, udp }} "
-        f"ip saddr @{members} ip daddr {dst_ip} th dport {port} ct state new accept"
-    )
+    for p in protos:
+        # NEW acceptance (wg_allow)
+        _delete_rule_by_match(
+            "wg_allow",
+            rf"meta l4proto {p} ip saddr @{members} ip daddr {dst_ip} th dport {port} ct state new accept"
+        )
+        _nft_try(
+            f"add rule inet dcv wg_allow meta l4proto {p} "
+            f"ip saddr @{members} ip daddr {dst_ip} th dport {port} ct state new accept"
+        )
 
-    # EST acceptance (fwd_est)
-    _delete_rule_by_match("fwd_est",
-        rf"ct original ip saddr @{members} ct original ip daddr {dst_ip} accept")
-    _nft_try(
-        f"add rule inet dcv fwd_est ct state established,related "
-        f"ct original ip saddr @{members} ct original ip daddr {dst_ip} accept"
-    )
+        # EST acceptance (fwd_est) — tie replies to original l4proto + tuple
+        _delete_rule_by_match(
+            "fwd_est",
+            rf"ct original l4proto {p} ct original ip saddr @{members} ct original ip daddr {dst_ip} accept"
+        )
+        _nft_try(
+            f"add rule inet dcv fwd_est ct state established,related "
+            f"ct original l4proto {p} ct original ip saddr @{members} ct original ip daddr {dst_ip} accept"
+        )
 
-def revoke_subnet_service(subnet_id: str, dst_ip: str, port: int):
+def revoke_subnet_service(subnet_id: str, dst_ip: str, port: int, proto: str = "both"):
+    """
+    Revoke members of subnet_id reaching dst_ip:port over proto ("tcp"|"udp"|"both").
+    """
     s = _slug(subnet_id)
     members = f"subnet_{s}_members"
-    _delete_rule_by_match("wg_allow",
-        rf"meta l4proto \{{ tcp, udp \}} ip saddr @{members} ip daddr {dst_ip} th dport {port} ct state new accept")
-    _delete_rule_by_match("fwd_est",
-        rf"ct original ip saddr @{members} ct original ip daddr {dst_ip} accept")
+    protos = ["tcp", "udp"] if proto == "both" else [proto.lower()]
+
+    for p in protos:
+        _delete_rule_by_match(
+            "wg_allow",
+            rf"meta l4proto {p} ip saddr @{members} ip daddr {dst_ip} th dport {port} ct state new accept"
+        )
+        _delete_rule_by_match(
+            "fwd_est",
+            rf"ct original l4proto {p} ct original ip saddr @{members} ct original ip daddr {dst_ip} accept"
+        )
 
 # ------------- Subnet ↔ Subnet links (rule-based) -------------
 

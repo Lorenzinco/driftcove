@@ -34,6 +34,8 @@ def create_peer(username: str, subnet: str, _: Annotated[str, Depends(verify_tok
     NOTE: Networking permissions are handled by subnet/service/p2p endpoints.
     """
     keys = generate_keys()
+    if keys is None:
+        raise HTTPException(status_code=500, detail="Key generation failed")
     if len(username) <= 0 or len(username) > 15:
         raise HTTPException(status_code=400, detail="Username must be between 1 and 15 characters long")
     with lock.write_lock(), state_manager.saved_state():
@@ -74,9 +76,9 @@ def create_peer(username: str, subnet: str, _: Annotated[str, Depends(verify_tok
             subnets = db.get_peers_subnets(peer)
             if not subnets:
                 raise HTTPException(status_code=404, detail=f"Peer {peer.username} is not in any subnet")
-            for subnet in subnets:
-                logging.info(f"Adding nftables rules for subnet {subnet}")
-                add_member(subnet.subnet, peer.address)
+            for subnet_item in subnets:
+                logging.info(f"Adding nftables rules for subnet {subnet_item}")
+                add_member(subnet_item.subnet, peer.address)
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Database/WG update failed: {e}")
@@ -97,6 +99,8 @@ def regenerate_config(username: str, _: Annotated[str, Depends(verify_token)]):
                 raise HTTPException(status_code=404, detail="Peer not found")
 
             keys = generate_keys()
+            if keys is None:
+                raise HTTPException(status_code=500, detail="Key generation failed")
 
             # Remove old key from WG, update DB, re-apply
             remove_from_wg_config(peer)
@@ -291,7 +295,7 @@ def helper_remove_peer(peer: Peer):
         for service in hosting_services:
             service_peers = db.get_peers_linked_to_service(service)
             for guest_peer in service_peers:
-                revoke_service(guest_peer.address, peer.address, service.port)
+                revoke_service(guest_peer.address, peer.address, service.port, service.protocol)
                 db.remove_link_from_peer_to_service(guest_peer, service)
             db.remove_service(service)
 
@@ -300,7 +304,7 @@ def helper_remove_peer(peer: Peer):
         for service in peer_services:
             host = db.get_service_host(service)
             if host:
-                revoke_service(peer.address, host.address, service.port)
+                revoke_service(peer.address, host.address, service.port, service.protocol)
             db.remove_link_from_peer_to_service(peer, service)
 
         # 3a) Remove peer from every subnet it belongs to (membership)
