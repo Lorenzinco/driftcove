@@ -97,7 +97,7 @@ def test_get_topology():
 def test_get_subnets():
     print("\033[94mGetting subnets...\033[0m")
     r = requests.get(f"{BASE_URL}/network/subnets", headers=HEADERS)
-    print(r.json())
+    print(r.text)
     if r.status_code == 200:
         print("\033[92mSuccessfully retrieved subnets\033[0m")
         return True
@@ -117,9 +117,9 @@ def test_status():
         print(f"\033[91mStatus check failed {r.status_code}: {r.text}\033[0m")
         return False
 
-def test_create_service(name="Test Service", department="IT", subnet="10.42.0.0/24"):
+def test_create_service(name="Https server", department="IT", peer_username="Test", port: int=443, description: str="This is a test service."):
     print(f"\033[94mCreating service {name}...\033[0m")
-    data = {"service_name": name, "department": department, "subnet": subnet}
+    data = {"service_name": name, "department": department, "username": peer_username, "port": port, "description": description}
     r = requests.post(f"{BASE_URL}/service/create", params=data, headers=HEADERS)
     print(r.status_code, r.json())
     if r.status_code == 200:
@@ -202,11 +202,13 @@ def test_get_all_peers():
 if __name__ == "__main__":
     # test_create_peer("peer1")
     # test_create_peer("peer2")
-    # test_add_link_between_peers("peer1", "peer2")
+    test_add_link_between_peers("Test", "master")
     # exit(0)
 
-
-
+    # test_get_subnets()
+    #test_get_topology()
+    #test_create_service()
+    exit(0)
 
     assert(test_create_peer() is True)
     assert(test_create_subnet() is True)

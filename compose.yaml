@@ -1,23 +1,47 @@
 services:
-  driftcove:
-    build: .
+  driftcove-backend:
+    build: backend
+    container_name: driftcove-backend
     environment:
-      - wg_udp_port=1194
-      - wg_backend_tcp_port=8000
-      - api_token=supersecuretoken
-      - endpoint=127.0.0.0
-      - wg_default_subnet=10.128.0.0/9
-      - mtu=1420
-    container_name: driftcove
+      - WG_IF=wg0
+      - WG_UDP_PORT=1194 # if you change this also change the port mapping below
+      - WG_ADDRESS_CIDR=10.128.0.1/24
+      - WG_DEFAULT_SUBNET=10.128.0.0/9
+      - WAN_IF=eth0
+      - WG_BACKEND_TCP_PORT=8000
+      - ENDPOINT=your.domain.com   # change this to your public domain or IP
+      - API_TOKEN=supersecuretoken
+    sysctls:
+      net.ipv4.ip_forward: "1"
+      net.ipv4.conf.all.rp_filter: "0"
+      net.ipv4.conf.default.rp_filter: "0"
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
     volumes:
       - ./wireguard:/etc/wireguard
       - ./database:/home/db
+      - ./captures:/var/log/captures
+    expose:
+      - "8000"
     ports:
-      - "1194:1194/udp"
-      - 8000:8000
+      - "1194:1194/udp"     # WireGuard
+    restart: unless-stopped
+    networks: [webnet]
+
+  driftcove-frontend:
+    build: frontend
+    container_name: driftcove-web
+    depends_on:
+      - driftcove
+    ports:
+      - "80:80"             # public web entry for the administration panel (add 443 if you configure TLS)
+    restart: unless-stopped
+    networks: [webnet]
+
+networks:
+  webnet:
+    driver: bridge
 
 volumes:
   wireguard-data:

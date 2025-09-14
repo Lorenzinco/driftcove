@@ -1,0 +1,6 @@
+# backend
+- TESTING!!!!!
+
+# publishing image
+- Create a separata dockerfile for nginx, a separate dockerfile for the frontend , modify the dockerfile in order to do all the work.
+- HTTPS

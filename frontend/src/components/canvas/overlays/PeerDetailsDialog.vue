@@ -1,0 +1,1021 @@
+<template>
+  <div>
+    <v-dialog v-model="open" max-width="520">
+      <v-card v-if="peer">
+        <v-card-title class="d-flex justify-space-between align-center">
+          <span>{{ peer.name }}</span>
+          <v-btn icon="mdi-close" variant="text" @click="close()" />
+        </v-card-title>
+        <v-divider />
+        <v-card-text class="text-body-2">
+          <div class="d-flex flex-column ga-2">
+            <div><strong>IP:</strong> {{ peer.ip }}</div>
+            <div><strong>Subnet:</strong> {{ subnetDisplay }}</div>
+            <div v-if="peer.presharedKey">
+              <strong>PSK:</strong>
+              <code class="code-inline">{{ peer.presharedKey }}</code>
+            </div>
+            <div v-if="peer.publicKey">
+              <strong>Pub:</strong>
+              <code class="code-inline">{{ peer.publicKey }}</code>
+            </div>
+            <div class="d-flex align-center ga-2">
+              <strong>Connected</strong>
+              <v-icon
+                :color="isOnline ? 'success' : 'error'"
+                size="18"
+                :title="lastHandshakeTitle"
+              >
+                {{ isOnline ? "mdi-wifi" : "mdi-wifi-off" }}
+              </v-icon>
+              <strong>{{ peer.public ? "Public" : "Unreachable" }}</strong>
+              <v-icon
+                :color="peer.public ? 'success' : 'error'"
+                size="18"
+                icon="mdi-web"
+                @click="showInfo = true"
+              ></v-icon>
+              <v-dialog v-model="showInfo" max-width="480">
+                <v-card>
+                  <v-card-title
+                    class="d-flex justify-space-between align-center"
+                  >
+                    <span
+                      ><v-icon
+                        :color="peer.public ? 'success' : 'error'"
+                        icon="mdi-web"
+                      />Connection details</span
+                    >
+                    <v-btn
+                      icon="mdi-close"
+                      variant="text"
+                      @click="showInfo = false"
+                    />
+                  </v-card-title>
+                  <v-divider />
+                  <v-card-text class="text-body-2">
+                    {{
+                      !peer.public
+                        ? "This peer is not public in its own subnetwork, this means that no other peer than those who are directly linked to it and admins can communicate with it. To make it public create a link between this peer and his own subnetwork"
+                        : "This peer is public, this means that any peer in the subnetwork can reach it directly."
+                    }}
+                  </v-card-text>
+                  <v-divider />
+                </v-card>
+              </v-dialog>
+            </div>
+
+            <v-alert
+              v-if="peer.public"
+              class="my-2"
+              density="comfortable"
+              icon="mdi-web"
+              title="Public Peer"
+              type="success"
+              variant="tonal"
+            >
+              <div class="d-flex align-center">
+                This peer is public in its subnet ({{ subnetDisplay }}). Any
+                peer in this subnet can reach it directly.
+              </div>
+              <template #append>
+                <v-btn
+                  color="error"
+                  :disabled="!ownSubnetCidr"
+                  :loading="disconnectPublicLoading"
+                  size="small"
+                  variant="text"
+                  @click="disconnectPublic"
+                >
+                  Disconnect
+                </v-btn>
+              </template>
+            </v-alert>
+            <v-alert
+              v-else
+              class="my-2"
+              density="comfortable"
+              icon="mdi-incognito"
+              title="Not public"
+              type="warning"
+              variant="tonal"
+            >
+              <div class="d-flex align-center">
+                This peer is not public in its subnet ({{ subnetDisplay }}). No
+                peer can generally reach this one, unless specified links.
+              </div>
+              <template #append>
+                <v-btn
+                  size="small"
+                  color="error"
+                  variant="text"
+                  :disabled="!ownSubnetCidr"
+                  :loading="disconnectPublicLoading"
+                  @click="connectPublic"
+                >
+                  Make Public
+                </v-btn>
+              </template>
+            </v-alert>
+
+            <div>
+              <v-icon icon="mdi-arrow-down" class="text-secondary" />
+              {{ (peer.rx / 1024).toFixed(2) }} KB
+              <v-icon icon="mdi-arrow-up" class="text-secondary" />
+              {{ (peer.tx / 1024).toFixed(2) }} KB
+            </div>
+
+            <v-divider />
+
+            <div v-if="problematicLinks.length" class="mb-2">
+              <v-alert type="warning" density="comfortable" class="mb-0">
+                <strong>Warning:</strong> {{ problematicLinks.length }} Mixed
+                p2p + service link(s) detected. Consider simplifying.
+              </v-alert>
+            </div>
+
+            <v-expansion-panels focusable inset>
+              <v-expansion-panel v-if="peer2SubnetLinks.length">
+                <v-expansion-panel-title>
+                  <div class="d-flex align-center">
+                    <v-icon
+                      size="18"
+                      icon="mdi-account"
+                      class="text-secondary"
+                    />
+                    <v-icon
+                      size="18"
+                      icon="mdi-arrow-left-right"
+                      class="mx-1 text-secondary"
+                    />
+                    <v-icon size="18" icon="mdi-lan" class="text-secondary" />
+                  </div>
+                  Membership Links ({{ peer2SubnetLinks.length }})
+                </v-expansion-panel-title>
+                <v-expansion-panel-text class="pt-0">
+                  <div
+                    v-if="!peer2SubnetLinks.length"
+                    class="text-medium-emphasis"
+                  >
+                    No links
+                  </div>
+                  <v-list v-else density="compact" nav class="py-0">
+                    <v-list-item
+                      v-for="link in peer2SubnetLinks"
+                      :key="link.id"
+                    >
+                      <v-list-item-title>
+                        {{
+                          store.subnets.find(
+                            (s) =>
+                              s.id ===
+                              (link.toId === peer?.id
+                                ? link.fromId
+                                : link.toId),
+                          )?.name || "Unknown Subnet"
+                        }}
+                      </v-list-item-title>
+                      <template #append>
+                        <v-btn
+                          :loading="
+                            cutDialog.loading && cutDialog.link?.id === link.id
+                          "
+                          density="comfortable"
+                          size="small"
+                          variant="text"
+                          icon
+                          color="error"
+                          @click="openCutDialogPeerSubnet(link)"
+                        >
+                          <v-icon icon="mdi-content-cut" />
+                        </v-btn>
+                      </template>
+                    </v-list-item>
+                  </v-list>
+                </v-expansion-panel-text>
+              </v-expansion-panel>
+              <v-expansion-panel v-if="p2pLinks.length > 0">
+                <v-expansion-panel-title>
+                  <div class="d-flex align-center">
+                    <v-icon size="18" icon="mdi-account" class="text-green" />
+                    <v-icon
+                      size="18"
+                      icon="mdi-arrow-left-right"
+                      class="mx-1 text-green"
+                    />
+                    <v-icon size="18" icon="mdi-account" class="text-green" />
+                  </div>
+                  p2p Links ({{ p2pLinks.length }})
+                </v-expansion-panel-title>
+                <v-expansion-panel-text class="pt-0">
+                  <div v-if="!p2pLinks.length" class="text-medium-emphasis">
+                    No links
+                  </div>
+                  <v-list v-else density="compact" nav class="py-0">
+                    <v-list-item v-for="link in p2pLinks" :key="link.id">
+                      <v-list-item-title>
+                        {{ peer?.name }}
+                        <v-icon
+                          class="mx-1 text-green"
+                          icon="mdi-arrow-left-right"
+                          size="16"
+                        />
+                        {{
+                          store.peers.find(
+                            (p) =>
+                              p.id ===
+                              (link.toId === peer?.id
+                                ? link.fromId
+                                : link.toId),
+                          )?.name
+                        }}
+                      </v-list-item-title>
+                      <v-list-item-subtitle />
+                      <template #append>
+                        <v-btn
+                          :loading="
+                            cutDialog.loading && cutDialog.link?.id === link.id
+                          "
+                          density="comfortable"
+                          size="small"
+                          variant="text"
+                          icon
+                          color="error"
+                          @click="openCutDialogP2P(link)"
+                        >
+                          <v-icon icon="mdi-content-cut" />
+                        </v-btn>
+                      </template>
+                    </v-list-item>
+                  </v-list>
+                </v-expansion-panel-text>
+              </v-expansion-panel>
+              <v-expansion-panel v-if="peer.host">
+                <v-expansion-panel-title>
+                  <div class="d-flex align-center">
+                    <v-icon size="18" icon="mdi-server" class="text-primary" />
+                    <v-icon
+                      size="18"
+                      icon="mdi-arrow-left"
+                      class="mx-1 text-primary"
+                    />
+                    <v-icon
+                      size="18"
+                      icon="mdi-account-multiple"
+                      class="text-primary"
+                    />
+                  </div>
+                  Incoming Service Links ({{ incomingServiceLinks.length }})
+                </v-expansion-panel-title>
+                <v-expansion-panel-text class="pt-0">
+                  <div
+                    v-if="incomingServiceLinks.length === 0"
+                    class="text-medium-emphasis"
+                  >
+                    No links
+                  </div>
+                  <v-list v-else density="compact" nav class="py-0">
+                    <v-list-item
+                      v-for="link in incomingServiceLinks"
+                      :key="link.id"
+                    >
+                      <v-list-item-title>
+                        {{ store.peers.find((p) => p.id === link.toId)?.name }}
+                        <v-icon
+                          size="16"
+                          icon="mdi-arrow-right"
+                          class="mx-1 text-primary"
+                        />
+                        <v-icon
+                          size="16"
+                          icon="mdi-server"
+                          class="mx-1 text-primary"
+                        />
+                        {{ link.serviceName }}
+                      </v-list-item-title>
+                      <v-list-item-subtitle v-if="link.serviceName">
+                      </v-list-item-subtitle>
+                      <template #append>
+                        <v-btn
+                          :disabled="!link.serviceName"
+                          :loading="
+                            cutDialog.loading && cutDialog.link?.id === link.id
+                          "
+                          density="comfortable"
+                          size="small"
+                          variant="text"
+                          icon
+                          color="error"
+                          @click="openCutDialogServiceHost(link)"
+                        >
+                          <v-icon icon="mdi-content-cut" />
+                        </v-btn>
+                      </template>
+                    </v-list-item>
+                  </v-list>
+                </v-expansion-panel-text>
+              </v-expansion-panel>
+              <v-expansion-panel v-if="outgoingServiceLinks.length > 0">
+                <v-expansion-panel-title>
+                  <div class="d-flex align-center">
+                    <v-icon size="18" icon="mdi-account" class="text-primary" />
+                    <v-icon
+                      size="18"
+                      icon="mdi-arrow-right"
+                      class="mx-1 text-primary"
+                    />
+                    <v-icon size="18" icon="mdi-server" class="text-primary" />
+                  </div>
+                  Outgoing Service Links ({{ outgoingServiceLinks.length }})
+                </v-expansion-panel-title>
+                <v-expansion-panel-text class="pt-0">
+                  <div
+                    v-if="!outgoingServiceLinks.length"
+                    class="text-medium-emphasis"
+                  >
+                    No links
+                  </div>
+                  <v-list v-else density="compact" nav class="py-0">
+                    <v-list-item
+                      v-for="link in outgoingServiceLinks"
+                      :key="link.id"
+                    >
+                      <v-list-item-title>
+                        This peer
+                        <v-icon
+                          class="mx-1 text-primary"
+                          icon="mdi-arrow-right"
+                          size="16"
+                        />
+                        <v-icon
+                          class="mx-1 text-primary"
+                          icon="mdi-server"
+                          size="16"
+                        />
+                        {{
+                          store.peers.find((p) => p.id === link.fromId)?.name
+                        }}
+                        {{ link.serviceName }}
+                      </v-list-item-title>
+                      <v-list-item-subtitle v-if="link.serviceName" />
+                      <template #append>
+                        <v-btn
+                          color="error"
+                          density="comfortable"
+                          :disabled="!link.serviceName"
+                          icon
+                          :loading="
+                            cutDialog.loading && cutDialog.link?.id === link.id
+                          "
+                          size="small"
+                          variant="text"
+                          @click="openCutDialogServiceConsumer(link)"
+                        >
+                          <v-icon icon="mdi-content-cut" />
+                        </v-btn>
+                      </template>
+                    </v-list-item>
+                  </v-list>
+                </v-expansion-panel-text>
+              </v-expansion-panel>
+              <v-expansion-panel v-if="admin_links.length > 0">
+                <v-expansion-panel-title>
+                  <div class="d-flex align-center">
+                    <v-icon
+                      color="purple"
+                      icon="mdi-shield-account"
+                      size="18"
+                    />
+                    <v-icon
+                      class="mx-1"
+                      color="purple"
+                      icon="mdi-arrow-right"
+                      size="18"
+                    />
+                  </div>
+                  Admin links ({{ admin_links.length }})
+                </v-expansion-panel-title>
+                <v-expansion-panel-text class="pt-0">
+                  <div
+                    v-if="admin_links.length === 0"
+                    class="text-medium-emphasis"
+                  >
+                    No links
+                  </div>
+                  <v-list v-else density="compact" nav class="py-0">
+                    <v-list-item v-for="link in admin_links" :key="link.id">
+                      <v-list-item-title v-if="link.kind === 'admin-p2p'">
+                        <v-icon
+                          class="mx-1"
+                          color="purple"
+                          icon="mdi-shield-account"
+                          size="16"
+                        />
+                        {{
+                          store.peers.find((p) => p.id === link.fromId)?.name
+                        }}
+                        <v-icon
+                          class="mx-1"
+                          color="purple"
+                          icon="mdi-arrow-right"
+                          size="16"
+                        />
+                        {{ store.peers.find((p) => p.id === link.toId)?.name }}
+                      </v-list-item-title>
+                      <v-list-item-title v-else>
+                        <v-icon
+                          class="mx-1"
+                          color="purple"
+                          icon="mdi-shield-account"
+                          size="16"
+                        />
+                        {{
+                          store.peers.find((p) => p.id === link.fromId)?.name
+                        }}
+                        <v-icon
+                          class="mx-1"
+                          color="purple"
+                          icon="mdi-arrow-right"
+                          size="16"
+                        />
+                        <v-icon
+                          class="mx-1"
+                          color="purple"
+                          icon="mdi-lan"
+                          size="16"
+                        />
+                        {{
+                          store.subnets.find((p) => p.id === link.toId)?.name
+                        }}
+                      </v-list-item-title>
+                      <template #append>
+                        <v-btn
+                          color="error"
+                          density="comfortable"
+                          icon
+                          :loading="
+                            cutDialog.loading && cutDialog.link?.id === link.id
+                          "
+                          size="small"
+                          variant="text"
+                          @click="
+                            cutDialog.mode === 'admin-p2p'
+                              ? openCutDialogAdminP2P(link)
+                              : openCutDialogAdminPeerToSubnet(link)
+                          "
+                        >
+                          <v-icon icon="mdi-content-cut" />
+                        </v-btn>
+                      </template>
+                    </v-list-item>
+                  </v-list>
+                </v-expansion-panel-text>
+              </v-expansion-panel>
+              <v-expansion-panel>
+                <v-expansion-panel-title>
+                  <div class="d-flex align-center">
+                    <v-icon
+                      class="text-secondary"
+                      icon="mdi-server"
+                      size="18"
+                    />
+                  </div>
+                  Hosted Services ({{
+                    Object.keys(peer.services || {}).length
+                  }})
+                </v-expansion-panel-title>
+                <v-expansion-panel-text class="pt-0">
+                  <div
+                    v-if="Object.keys(peer.services || {}).length === 0"
+                    class="text-medium-emphasis"
+                  >
+                    No services
+                  </div>
+                  <v-list v-else density="compact" nav class="py-0">
+                    <v-list-item v-for="(svc, key) in peer.services" :key="key">
+                      <v-list-item-title>
+                        <v-icon
+                          class="text-primary"
+                          icon="mdi-server"
+                          size="18"
+                        />{{ svc.name || key }}
+                      </v-list-item-title>
+                      <v-list-item-subtitle>
+                        <span v-if="svc.port">Port: {{ svc.port }}</span>
+                        <span v-if="svc.protocol">
+                          | Proto: {{ svc.protocol }}</span
+                        >
+                        <span v-if="svc.department">
+                          | Dept: {{ svc.department }}
+                        </span>
+                        <span v-if="svc.description">
+                          | {{ svc.description }}
+                        </span>
+                      </v-list-item-subtitle>
+                      <template #append>
+                        <v-btn
+                          icon
+                          size="small"
+                          variant="text"
+                          color="error"
+                          :disabled="
+                            deleteDialog.loading &&
+                            deleteDialog.serviceKey === key
+                          "
+                          @click="promptDeleteService(key, svc.name || key)"
+                        >
+                          <v-icon icon="mdi-trash-can" />
+                        </v-btn>
+                      </template>
+                    </v-list-item>
+                  </v-list>
+                  <div class="d-flex justify-end mt-2">
+                    <v-btn
+                      color="primary"
+                      prepend-icon="mdi-plus"
+                      size="small"
+                      variant="tonal"
+                      @click="openAddService(peer.id)"
+                    >
+                      Add Service
+                    </v-btn>
+                  </div>
+                </v-expansion-panel-text>
+              </v-expansion-panel>
+            </v-expansion-panels>
+          </div>
+        </v-card-text>
+        <v-divider />
+        <v-card-actions>
+          <v-spacer />
+          <v-btn
+            :loading="dlLoading"
+            prepend-icon="mdi-download"
+            variant="text"
+            @click="recreateConfig"
+          >
+            Recreate Config
+          </v-btn>
+          <v-btn color="primary" variant="elevated" @click="close()">
+            Close
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+    <AddServiceDialog ref="addServiceDialogRef" />
+    <ConfirmCutLinkDialog
+      v-model="cutDialog.open"
+      :link="cutDialog.link"
+      :loading="cutDialog.loading"
+      :mode="cutDialog.mode"
+      :peer-a="peer?.name"
+      :peer-b="
+        cutDialog.mode === 'p2p'
+          ? otherPeerName
+          : cutDialog.mode === 'membership'
+            ? subnetName
+            : cutDialog.mode === 'service-host'
+              ? consumerPeerName
+              : cutDialog.mode === 'service-consumer'
+                ? hostPeerName
+                : cutDialog.mode === 'admin-p2p'
+                  ? otherPeerName
+                  : cutDialog.mode === 'admin-peer-subnet'
+                    ? subnetName
+                    : ''
+      "
+      :problematic="
+        cutDialog.mode === 'p2p' &&
+        problematicLinks.some((l) => l.id === cutDialog.link?.id)
+      "
+      :service-name="cutDialog.link?.serviceName"
+      @confirm="performCut"
+    />
+    <v-dialog v-model="deleteDialog.open" max-width="420">
+      <v-card>
+        <v-card-title class="text-subtitle-1"> Delete Service </v-card-title>
+        <v-card-text class="text-body-2">
+          Are you sure you want to delete service
+          <strong>{{ deleteDialog.serviceName }}</strong
+          >? This will remove all links to this service.
+          <v-alert
+            v-if="deleteDialog.error"
+            type="error"
+            density="compact"
+            class="mt-3"
+            :text="deleteDialog.error"
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn
+            variant="text"
+            @click="cancelDeleteService"
+            :disabled="deleteDialog.loading"
+            >Cancel</v-btn
+          >
+          <v-btn
+            color="error"
+            :loading="deleteDialog.loading"
+            @click="confirmDeleteService"
+            >Delete</v-btn
+          >
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { useBackendInteractionStore } from "@/stores/backendInteraction";
+import { useNetworkStore } from "@/stores/network";
+import AddServiceDialog from "./AddServiceDialog.vue";
+import ConfirmCutLinkDialog from "./ConfirmCutLinkDialog.vue";
+
+const showInfo = ref(false);
+const dlLoading = ref(false);
+const store = useNetworkStore();
+const backend = useBackendInteractionStore();
+
+// Delete service dialog state
+const deleteDialog = ref<{
+  open: boolean;
+  loading: boolean;
+  serviceKey: string;
+  serviceName: string;
+  error: string;
+}>({
+  open: false,
+  loading: false,
+  serviceKey: "",
+  serviceName: "",
+  error: "",
+});
+const open = computed({
+  get: () => !!store.peerDetailsRequestId,
+  set: (v) => {
+    if (!v) {
+      store.peerDetailsRequestId = null;
+      store.closePeerDetails();
+    }
+  },
+});
+const peer = computed(() =>
+  store.peers.find((p) => p.id === store.peerDetailsRequestId),
+);
+// tick every second to keep timers fresh while dialog is open
+const nowSec = ref(Math.floor(Date.now() / 1000));
+let tickHandle: number | null = null;
+onMounted(() => {
+  tickHandle = window.setInterval(() => {
+    nowSec.value = Math.floor(Date.now() / 1000);
+  }, 1000);
+});
+onBeforeUnmount(() => {
+  if (tickHandle) {
+    clearInterval(tickHandle);
+    tickHandle = null;
+  }
+});
+
+const isOnline = computed(() => {
+  if (!peer.value) return false;
+  return nowSec.value - peer.value.lastHandshake < 300; // 5 minutes
+});
+const lastHandshakeTitle = computed(() => {
+  const p = peer.value;
+  if (!p || !Number.isFinite(p.lastHandshake) || p.lastHandshake <= 0)
+    return "never";
+  const delta = Math.max(0, nowSec.value - Math.floor(p.lastHandshake));
+  const m = Math.floor(delta / 60);
+  const s = delta % 60;
+  return `Last handshake: ${m}m ${String(s).padStart(2, "0")}s ago`;
+});
+const ownSubnetCidr = computed(() => {
+  const p = peer.value;
+  if (!p || !p.subnetId) return null;
+  const s = store.subnets.find((ss) => ss.id === p.subnetId);
+  return s?.cidr || p.subnetId;
+});
+const subnetDisplay = computed(() => {
+  const p = peer.value;
+  if (!p || !p.subnetId) return "None";
+  const s = store.subnets.find((ss) => ss.id === p.subnetId);
+  if (!s) return p.subnetId;
+  return `${s.name} (${s.cidr})`;
+});
+const peer2SubnetLinks = computed(() => {
+  const p = peer.value;
+  const ownSubnetId = p?.subnetId;
+  if (!p) return [];
+  return store.links.filter(
+    (l) =>
+      ((l.toId === p.id && l.fromId !== ownSubnetId) ||
+        (l.fromId === p.id && l.toId !== ownSubnetId)) &&
+      l.kind === "membership",
+  );
+});
+const p2pLinks = computed(() => {
+  const p = peer.value;
+  if (!p) return [];
+  return store.links.filter(
+    (l) => (l.toId === p.id || l.fromId === p.id) && l.kind === "p2p",
+  );
+});
+const incomingServiceLinks = computed(() => {
+  const p = peer.value;
+  if (!p) return [];
+  return store.links.filter((l) => l.fromId === p.id && l.kind === "service");
+});
+const outgoingServiceLinks = computed(() => {
+  const p = peer.value;
+  if (!p) return [];
+  return store.links.filter((l) => l.toId === p.id && l.kind === "service");
+});
+const problematicLinks = computed(() => {
+  const p = peer.value;
+  if (!p) return [];
+
+  // Pre-compute all host->client service link pairs
+  const servicePairs = new Set<string>();
+  for (const l of store.links) {
+    if (l.kind === "service") {
+      const hostPeer = store.peers.find((pp) => pp.id === l.fromId);
+      if (hostPeer?.host) {
+        servicePairs.add(`${l.fromId}|${l.toId}`); // hostId|clientId
+      }
+    }
+  }
+
+  // A problematic link (we flag the p2p link) is when there is a p2p link
+  // between this peer and a host peer AND a service link between that host and this peer.
+  return store.links.filter((l) => {
+    if (l.kind !== "p2p") return false;
+    if (l.fromId !== p.id && l.toId !== p.id) return false;
+
+    const otherId = l.fromId === p.id ? l.toId : l.fromId;
+    const other = store.peers.find((pp) => pp.id === otherId);
+    if (!other) return false;
+
+    // Determine which side is host (either other or current peer)
+    let hostId: string | null = null;
+    let clientId: string | null = null;
+
+    if (other.host) {
+      hostId = otherId;
+      clientId = p.id;
+    } else if (p.host) {
+      hostId = p.id;
+      clientId = otherId;
+    } else {
+      return false; // Neither side is a host, can't be problematic.
+    }
+
+    return servicePairs.has(`${hostId}|${clientId}`);
+  });
+});
+
+const outgoing_admin_p2p_links = computed(() =>
+  store.links.filter(
+    (l) => l.kind === "admin-p2p" && l.fromId === peer.value?.id,
+  ),
+);
+const admin_subnet_links = computed(() =>
+  store.links.filter(
+    (l) => l.kind === "admin-peer-subnet" && l.fromId === peer.value?.id,
+  ),
+);
+const admin_links = computed(() =>
+  outgoing_admin_p2p_links.value.concat(admin_subnet_links.value),
+);
+function close() {
+  open.value = false;
+}
+
+const addServiceDialogRef = ref<InstanceType<typeof AddServiceDialog> | null>(
+  null,
+);
+function openAddService(peerId: string) {
+  addServiceDialogRef.value?.show(peerId);
+}
+
+// ----- Service Deletion Logic -----
+function promptDeleteService(serviceKey: string, serviceName: string) {
+  deleteDialog.value.open = true;
+  deleteDialog.value.loading = false;
+  deleteDialog.value.serviceKey = serviceKey;
+  deleteDialog.value.serviceName = serviceName;
+  deleteDialog.value.error = "";
+}
+
+function cancelDeleteService() {
+  if (deleteDialog.value.loading) return;
+  deleteDialog.value.open = false;
+}
+
+async function confirmDeleteService() {
+  if (deleteDialog.value.loading) return;
+  deleteDialog.value.loading = true;
+  deleteDialog.value.error = "";
+  const name = deleteDialog.value.serviceName;
+  try {
+    const ok = await backend.deleteService(name);
+    if (!ok) {
+      deleteDialog.value.error =
+        backend.lastError || "Failed to delete service";
+      deleteDialog.value.loading = false;
+      return;
+    }
+    deleteDialog.value.open = false;
+  } catch (e: any) {
+    deleteDialog.value.error = e?.message || "Unexpected error";
+  } finally {
+    deleteDialog.value.loading = false;
+  }
+}
+
+async function recreateConfig() {
+  if (!peer.value) return;
+  dlLoading.value = true;
+  try {
+    const cfg = await backend.fetchPeerConfig(peer.value.name);
+    if (cfg) {
+      const blob = new Blob([cfg], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${peer.value.name}.conf`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 0);
+    }
+  } finally {
+    dlLoading.value = false;
+  }
+}
+
+// Disconnect the peer's public membership to its own subnet
+const disconnectPublicLoading = ref(false);
+const connectPublicLoading = ref(false);
+async function disconnectPublic() {
+  if (!peer.value || !ownSubnetCidr.value) return;
+  disconnectPublicLoading.value = true;
+  try {
+    await backend.disconnectPeerFromSubnet(
+      peer.value.name,
+      ownSubnetCidr.value,
+    );
+  } finally {
+    disconnectPublicLoading.value = false;
+  }
+}
+async function connectPublic() {
+  if (!peer.value || !ownSubnetCidr.value) return;
+  connectPublicLoading.value = true;
+  try {
+    await backend.connectPeerToSubnet(peer.value.name, ownSubnetCidr.value);
+  } finally {
+    disconnectPublicLoading.value = false;
+  }
+}
+
+// --- Cut link functionality with dialog ---
+interface CutDialogState {
+  open: boolean;
+  loading: boolean;
+  link: any | null;
+  mode:
+    | "p2p"
+    | "membership"
+    | "service-host"
+    | "service-consumer"
+    | "service-generic"
+    | "admin-p2p"
+    | "admin-peer-subnet"
+    | "";
+}
+const cutDialog = ref<CutDialogState>({
+  open: false,
+  loading: false,
+  link: null,
+  mode: "",
+});
+
+const otherPeerName = computed(() => {
+  if (!peer.value || !cutDialog.value.link) return "";
+  const l = cutDialog.value.link;
+  const otherId = l.fromId === peer.value.id ? l.toId : l.fromId;
+  return store.peers.find((p) => p.id === otherId)?.name || "";
+});
+const consumerPeerName = computed(() => {
+  if (
+    !peer.value ||
+    !cutDialog.value.link ||
+    cutDialog.value.mode !== "service-host"
+  )
+    return "";
+  const l = cutDialog.value.link;
+  return store.peers.find((p) => p.id === l.toId)?.name || "";
+});
+const hostPeerName = computed(() => {
+  if (
+    !peer.value ||
+    !cutDialog.value.link ||
+    cutDialog.value.mode !== "service-consumer"
+  )
+    return "";
+  const l = cutDialog.value.link;
+  return store.peers.find((p) => p.id === l.fromId)?.name || "";
+});
+const subnetName = computed(() => {
+  if (
+    !peer.value ||
+    !cutDialog.value.link ||
+    (cutDialog.value.mode !== "membership" &&
+      cutDialog.value.mode !== "admin-peer-subnet")
+  )
+    return "";
+  const l = cutDialog.value.link;
+  const subnetId = l.fromId === peer.value.id ? l.toId : l.fromId;
+  return store.subnets.find((s) => s.id === subnetId)?.name || "";
+});
+
+function openCutDialogP2P(link: any) {
+  cutDialog.value = { open: true, loading: false, link, mode: "p2p" };
+}
+function openCutDialogPeerSubnet(link: any) {
+  cutDialog.value = { open: true, loading: false, link, mode: "membership" };
+}
+function openCutDialogServiceHost(link: any) {
+  cutDialog.value = { open: true, loading: false, link, mode: "service-host" };
+}
+function openCutDialogServiceConsumer(link: any) {
+  cutDialog.value = {
+    open: true,
+    loading: false,
+    link,
+    mode: "service-consumer",
+  };
+}
+function openCutDialogAdminP2P(link: any) {
+  cutDialog.value = { open: true, loading: false, link, mode: "admin-p2p" };
+}
+function openCutDialogAdminPeerToSubnet(link: any) {
+  cutDialog.value = {
+    open: true,
+    loading: false,
+    link,
+    mode: "admin-peer-subnet",
+  };
+}
+function closeCutDialog() {
+  if (cutDialog.value.loading) return;
+  cutDialog.value.open = false;
+}
+async function performCut() {
+  if (!peer.value || !cutDialog.value.link) return;
+  const l = cutDialog.value.link;
+  cutDialog.value.loading = true;
+  try {
+    switch (cutDialog.value.mode) {
+      case "p2p": {
+        const otherId = l.fromId === peer.value.id ? l.toId : l.fromId;
+        const other = store.peers.find((p) => p.id === otherId);
+        if (!other) return;
+        await backend.disconnectPeers(peer.value.name, other.name);
+      }
+      case "membership": {
+        // membership link: fromId is peer, toId is subnet (per topology generation)
+        const subnetId = l.fromId === peer.value.id ? l.toId : l.fromId;
+        const subnet = store.subnets.find((s) => s.id === subnetId);
+        if (!subnet) return;
+        await backend.disconnectPeerFromSubnet(peer.value.name, subnet.cidr);
+      }
+      case "service-host": {
+        const consumer = store.peers.find((p) => p.id === l.toId);
+        if (!consumer || !l.serviceName) return;
+        await backend.disconnectPeerFromService(consumer.name, l.serviceName);
+      }
+      case "service-consumer": {
+        if (!l.serviceName) return;
+        await backend.disconnectPeerFromService(peer.value.name, l.serviceName);
+      }
+    }
+  } finally {
+    cutDialog.value.loading = false;
+    cutDialog.value.open = false;
+  }
+}
+</script>
+
+<style scoped>
+.code-inline {
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+</style>

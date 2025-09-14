@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VPN Topology Canvas</title>
+  <!-- Vue 3 & Vuetify 3 via CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/vuetify@3.6.14/dist/vuetify.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.4.38/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@3.6.14/dist/vuetify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css"></script>
+  <style>
+    html, body, #app { height: 100%; margin: 0; }
+    canvas { background: #0b1020; border-radius: 10px; display: block; }
+    .sidebar {
+      width: 340px;
+      border-left: 1px solid rgba(255,255,255,0.08);
+      background: linear-gradient(180deg, #121a2f, #0e1426);
+    }
+    .legend-dot { width: 12px; height: 12px; border-radius: 9999px; display: inline-block; margin-right: 8px; }
+    .pointer { cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script>
+    // --- Helpers ------------------------------------------------------------
+    function uid(prefix = "id") { return prefix + Math.random().toString(36).slice(2, 9); }
+    function dist(a, b) { const dx = a.x - b.x, dy = a.y - b.y; return Math.hypot(dx, dy); }
+
+    const CATEGORY_COLORS = {
+      peer: '#7AD7F0',
+      router: '#FFC857',
+      subnet: '#7CF29A',
+      link: '#86A1FF',
+    };
+
+    // --- App ---------------------------------------------------------------
+    const { createApp, ref, reactive, computed, onMounted, watch } = Vue;
+    const { createVuetify } = Vuetify;
+
+    const vuetify = createVuetify({ theme: { defaultTheme: 'dark' } });
+
+    createApp({
+      setup() {
+        const canvasRef = ref(null);
+        const ctxRef = ref(null);
+        const dpr = window.devicePixelRatio || 1;
+
+        // World state (model)
+        const state = reactive({
+          peers: [
+            { id: uid('r_'), name: 'Router A', type: 'router', ip: '10.0.0.1', subnetId: null, x: 220, y: 160 },
+            { id: uid('p_'), name: 'Peer 1', type: 'peer', ip: '10.0.1.10', subnetId: null, x: 540, y: 300 },
+          ],
+          subnets: [
+            { id: uid('s_'), name: 'Office LAN', cidr: '10.0.1.0/24', x: 520, y: 300, radius: 180 },
+          ],
+          links: [],
+          selection: null, // {type:'peer'|'subnet'|'link', id}
+          tool: 'select',  // 'select' | 'connect' | 'add-peer' | 'add-router' | 'add-subnet'
+          pan: { x: 0, y: 0, dragging: false, sx: 0, sy: 0 },
+          zoom: 1,
+          drag: { active: false, id: null, type: null, offsetX: 0, offsetY: 0 },
+          connectFrom: null,
+          showRightPanel: true,
+          grid: true,
+        });
+
+        // Fit canvas to container size with DPR
+        function resizeCanvas() {
+          const canvas = canvasRef.value;
+          if (!canvas) return;
+          const rect = canvas.parentElement.getBoundingClientRect();
+          canvas.width = Math.max(600, rect.width) * dpr;
+          canvas.height = Math.max(400, rect.height) * dpr;
+          canvas.style.width = Math.max(600, rect.width) + 'px';
+          canvas.style.height = Math.max(400, rect.height) + 'px';
+          const ctx = canvas.getContext('2d');
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          ctxRef.value = ctx;
+          draw();
+        }
+
+        // World <-> Screen transforms
+        function toWorld(x, y) {
+          return {
+            x: (x - state.pan.x) / state.zoom,
+            y: (y - state.pan.y) / state.zoom,
+          };
+        }
+        function toScreen(wx, wy) {
+          return {
+            x: wx * state.zoom + state.pan.x,
+            y: wy * state.zoom + state.pan.y,
+          };
+        }
+
+        // Hit testing
+        function hitTestPeer(pt) {
+          // peers first (above subnets visually)
+          for (let i = state.peers.length - 1; i >= 0; i--) {
+            const n = state.peers[i];
+            if (dist(pt, n) <= 22) return n; // node radius
+          }
+          return null;
+        }
+        function hitTestSubnet(pt) {
+          for (let i = state.subnets.length - 1; i >= 0; i--) {
+            const s = state.subnets[i];
+            if (dist(pt, s) <= s.radius) return s;
+          }
+          return null;
+        }
+
+        // Drawing
+        function drawGrid(ctx, width, height) {
+          if (!state.grid) return;
+          const step = 40 * state.zoom;
+          const ox = state.pan.x % step;
+          const oy = state.pan.y % step;
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+          ctx.lineWidth = 1;
+          for (let x = ox; x < width; x += step) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+          }
+          for (let y = oy; y < height; y += step) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        function drawSubnets(ctx) {
+          for (const s of state.subnets) {
+            const { x, y } = toScreen(s.x, s.y);
+            const r = s.radius * state.zoom;
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(124,242,154,0.07)';
+            ctx.fill();
+            ctx.strokeStyle = CATEGORY_COLORS.subnet;
+            ctx.lineWidth = 2;
+            ctx.setLineDash([8, 8]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            // label
+            ctx.fillStyle = 'rgba(255,255,255,0.9)';
+            ctx.font = '600 14px ui-sans-serif, system-ui';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${s.name}  (${s.cidr})`, x, y - r - 10);
+            ctx.restore();
+          }
+        }
+
+        function drawLinks(ctx) {
+          ctx.save();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = CATEGORY_COLORS.link;
+          for (const e of state.links) {
+            const a = state.peers.find(p => p.id === e.fromId);
+            const b = state.peers.find(p => p.id === e.toId);
+            if (!a || !b) continue;
+            const A = toScreen(a.x, a.y); const B = toScreen(b.x, b.y);
+            ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        function drawPeers(ctx) {
+          for (const n of state.peers) {
+            const { x, y } = toScreen(n.x, n.y);
+            // node circle
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(x, y, 22, 0, Math.PI * 2);
+            ctx.fillStyle = n.type === 'router' ? 'rgba(255,200,87,0.15)' : 'rgba(122,215,240,0.15)';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = n.type === 'router' ? CATEGORY_COLORS.router : CATEGORY_COLORS.peer;
+            ctx.stroke();
+            // icon
+            ctx.fillStyle = 'rgba(255,255,255,0.9)';
+            ctx.font = '700 14px ui-sans-serif, system-ui';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const icon = n.type === 'router' ? '⟲' : '●';
+            ctx.fillText(icon, x, y);
+            // label
+            ctx.font = '600 12px ui-sans-serif, system-ui';
+            ctx.textBaseline = 'top';
+            ctx.fillText(n.name, x, y + 24);
+            ctx.restore();
+          }
+        }
+
+        function highlightSelection(ctx) {
+          const sel = state.selection; if (!sel) return;
+          ctx.save();
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.setLineDash([4, 4]);
+          ctx.lineWidth = 2;
+          if (sel.type === 'peer') {
+            const n = state.peers.find(p => p.id === sel.id); if (!n) return;
+            const { x, y } = toScreen(n.x, n.y);
+            ctx.beginPath(); ctx.arc(x, y, 28, 0, Math.PI * 2); ctx.stroke();
+          } else if (sel.type === 'subnet') {
+            const s = state.subnets.find(s => s.id === sel.id); if (!s) return;
+            const { x, y } = toScreen(s.x, s.y);
+            ctx.beginPath(); ctx.arc(x, y, s.radius * state.zoom + 6, 0, Math.PI * 2); ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        function draw() {
+          const canvas = canvasRef.value; if (!canvas) return;
+          const ctx = ctxRef.value; if (!ctx) return;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          const width = canvas.width / dpr, height = canvas.height / dpr;
+          drawGrid(ctx, width, height);
+          drawSubnets(ctx);
+          drawLinks(ctx);
+          drawPeers(ctx);
+          highlightSelection(ctx);
+        }
+
+        // Constrain node inside assigned subnet
+        function clampToSubnet(node) {
+          if (!node.subnetId) return;
+          const s = state.subnets.find(s => s.id === node.subnetId);
+          if (!s) return;
+          const r = s.radius - 26; // padding inside subnet
+          const d = dist(node, s);
+          if (d > r) {
+            const angle = Math.atan2(node.y - s.y, node.x - s.x);
+            node.x = s.x + r * Math.cos(angle);
+            node.y = s.y + r * Math.sin(angle);
+          }
+        }
+
+        // Mouse interactions
+        function onWheel(e) {
+          const rect = canvasRef.value.getBoundingClientRect();
+          const mx = e.clientX - rect.left; const my = e.clientY - rect.top;
+          const before = toWorld(mx, my);
+          const delta = -e.deltaY * 0.0015;
+          const newZoom = Math.min(2.5, Math.max(0.4, state.zoom * (1 + delta)));
+          state.zoom = newZoom;
+          const after = toWorld(mx, my);
+          state.pan.x += (after.x - before.x) * state.zoom;
+          state.pan.y += (after.y - before.y) * state.zoom;
+          draw();
+        }
+
+        function onMousedown(e) {
+          const rect = canvasRef.value.getBoundingClientRect();
+          const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+          const pt = toWorld(sx, sy);
+
+          if (e.button === 1 || (e.button === 0 && e.shiftKey)) { // middle or shift+left -> pan
+            state.pan.dragging = true; state.pan.sx = sx; state.pan.sy = sy; return;
+          }
+
+          if (state.tool === 'add-peer' || state.tool === 'add-router') {
+            const n = { id: uid('n_'), name: state.tool === 'add-peer' ? 'Peer' : 'Router', type: state.tool === 'add-peer' ? 'peer' : 'router', ip: '', subnetId: null, x: pt.x, y: pt.y };
+            state.peers.push(n); state.selection = { type: 'peer', id: n.id }; state.tool = 'select'; draw(); return;
+          }
+          if (state.tool === 'add-subnet') {
+            const s = { id: uid('s_'), name: 'Subnet', cidr: '10.0.0.0/24', x: pt.x, y: pt.y, radius: 160 };
+            state.subnets.push(s); state.selection = { type: 'subnet', id: s.id }; state.tool = 'select'; draw(); return;
+          }
+
+          // hit tests
+          const peer = hitTestPeer(pt);
+          const subnet = peer ? null : hitTestSubnet(pt); // prefer peer hit
+
+          if (state.tool === 'connect') {
+            if (peer) {
+              if (!state.connectFrom) {
+                state.connectFrom = peer.id; state.selection = { type: 'peer', id: peer.id };
+              } else if (state.connectFrom !== peer.id) {
+                state.links.push({ id: uid('l_'), fromId: state.connectFrom, toId: peer.id });
+                state.connectFrom = null; state.selection = { type: 'peer', id: peer.id };
+              }
+              draw();
+            }
+            return;
+          }
+
+          if (peer) {
+            state.selection = { type: 'peer', id: peer.id };
+            state.drag = { active: true, id: peer.id, type: 'peer', offsetX: pt.x - peer.x, offsetY: pt.y - peer.y };
+          } else if (subnet) {
+            state.selection = { type: 'subnet', id: subnet.id };
+            state.drag = { active: true, id: subnet.id, type: 'subnet', offsetX: pt.x - subnet.x, offsetY: pt.y - subnet.y };
+          } else {
+            state.selection = null;
+          }
+          draw();
+        }
+
+        function onMousemove(e) {
+          const rect = canvasRef.value.getBoundingClientRect();
+          const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+          if (state.pan.dragging) {
+            state.pan.x += sx - state.pan.sx;
+            state.pan.y += sy - state.pan.sy;
+            state.pan.sx = sx; state.pan.sy = sy;
+            draw(); return;
+          }
+          if (!state.drag.active) return;
+          const pt = toWorld(sx, sy);
+          if (state.drag.type === 'peer') {
+            const n = state.peers.find(p => p.id === state.drag.id); if (!n) return;
+            n.x = pt.x - state.drag.offsetX; n.y = pt.y - state.drag.offsetY;
+            clampToSubnet(n);
+          } else if (state.drag.type === 'subnet') {
+            const s = state.subnets.find(s => s.id === state.drag.id); if (!s) return;
+            s.x = pt.x - state.drag.offsetX; s.y = pt.y - state.drag.offsetY;
+            // move peers assigned to this subnet by same delta? optional: keep fixed (simpler)
+          }
+          draw();
+        }
+
+        function onMouseup() {
+          state.drag.active = false;
+          state.pan.dragging = false;
+        }
+
+        // UI actions
+        function deleteSelection() {
+          const sel = state.selection; if (!sel) return;
+          if (sel.type === 'peer') {
+            const i = state.peers.findIndex(p => p.id === sel.id);
+            if (i !== -1) state.peers.splice(i, 1);
+            state.links = state.links.filter(l => l.fromId !== sel.id && l.toId !== sel.id);
+          } else if (sel.type === 'subnet') {
+            const i = state.subnets.findIndex(s => s.id === sel.id);
+            if (i !== -1) state.subnets.splice(i, 1);
+            for (const n of state.peers) if (n.subnetId === sel.id) n.subnetId = null;
+          }
+          state.selection = null; draw();
+        }
+
+        function assignToSubnet(peerId, subnetId) {
+          const n = state.peers.find(p => p.id === peerId); const s = state.subnets.find(s => s.id === subnetId);
+          if (!n) return; n.subnetId = subnetId || null;
+          if (s) { // snap inside
+            const angle = Math.random() * Math.PI * 2;
+            const r = Math.max(50, s.radius - 40) * 0.6; // drop near center
+            n.x = s.x + r * Math.cos(angle);
+            n.y = s.y + r * Math.sin(angle);
+          }
+          draw();
+        }
+
+        // Keyboard shortcuts
+        function onKeydown(e) {
+          if ((e.key === 'Delete' || e.key === 'Backspace') && !e.target.matches('input, textarea')) {
+            e.preventDefault(); deleteSelection();
+          }
+          if (e.key === 'Escape') { state.tool = 'select'; state.connectFrom = null; }
+        }
+
+        onMounted(() => {
+          resizeCanvas();
+          window.addEventListener('resize', resizeCanvas);
+          const c = canvasRef.value;
+          c.addEventListener('wheel', onWheel, { passive: true });
+          c.addEventListener('mousedown', onMousedown);
+          window.addEventListener('mousemove', onMousemove);
+          window.addEventListener('mouseup', onMouseup);
+          window.addEventListener('keydown', onKeydown);
+        });
+
+        watch(() => [state.zoom, state.pan.x, state.pan.y, state.peers.length, state.subnets.length, state.links.length], draw, { deep: true });
+
+        // Right panel computed
+        const selectedPeer = computed(() => state.selection?.type === 'peer' ? state.peers.find(p => p.id === state.selection.id) : null);
+        const selectedSubnet = computed(() => state.selection?.type === 'subnet' ? state.subnets.find(s => s.id === state.selection.id) : null);
+
+        return {
+          canvasRef, state, selectedPeer, selectedSubnet,
+          deleteSelection, assignToSubnet, resizeCanvas, draw,
+        };
+      },
+      template: `
+        <v-app>
+          <v-main>
+            <v-container fluid class="pa-0" style="height:100%">
+              <v-row no-gutters style="height:100%">
+                <v-col cols="12" md="9" class="pa-4">
+                  <v-sheet rounded="lg" class="pa-0" elevation="2">
+                    <div class="d-flex align-center justify-space-between px-4 pt-4">
+                      <div class="d-flex align-center ga-2">
+                        <v-btn :variant="state.tool==='select' ? 'elevated' : 'tonal'" @click="state.tool='select'" prepend-icon="mdi-cursor-default">Select</v-btn>
+                        <v-btn :variant="state.tool==='connect' ? 'elevated' : 'tonal'" @click="state.tool='connect'" prepend-icon="mdi-connection">Connect</v-btn>
+                        <v-divider vertical class="mx-2"/>
+                        <v-btn :variant="state.tool==='add-peer' ? 'elevated' : 'tonal'" @click="state.tool='add-peer'" prepend-icon="mdi-lan-connect">Peer</v-btn>
+                        <v-btn :variant="state.tool==='add-router' ? 'elevated' : 'tonal'" @click="state.tool='add-router'" prepend-icon="mdi-router-wireless">Router</v-btn>
+                        <v-btn :variant="state.tool==='add-subnet' ? 'elevated' : 'tonal'" @click="state.tool='add-subnet'" prepend-icon="mdi-lan">Subnet</v-btn>
+                        <v-switch class="ml-4" inset v-model="state.grid" label="Grid" hide-details density="compact"/>
+                      </div>
+                      <div class="text-caption text-medium-emphasis">
+                        Zoom: {{ (state.zoom*100).toFixed(0) }}% &nbsp; | &nbsp; Pan: {{ state.pan.x.toFixed(0) }}, {{ state.pan.y.toFixed(0) }}
+                      </div>
+                    </div>
+                    <div style="height: 70vh;" class="pa-3">
+                      <canvas ref="canvasRef" class="w-100 h-100"></canvas>
+                    </div>
+                  </v-sheet>
+
+                  <v-card class="mt-4" variant="tonal">
+                    <v-card-text>
+                      <div class="d-flex align-center ga-6">
+                        <div>
+                          <span class="legend-dot" :style="{background: '#7AD7F0'}"></span> Peer
+                        </div>
+                        <div>
+                          <span class="legend-dot" :style="{background: '#FFC857'}"></span> Router
+                        </div>
+                        <div>
+                          <span class="legend-dot" :style="{background: '#7CF29A'}"></span> Subnet (boundary)
+                        </div>
+                        <div>
+                          <span class="legend-dot" :style="{background: '#86A1FF'}"></span> Link
+                        </div>
+                        <v-spacer></v-spacer>
+                        <div class="text-caption text-medium-emphasis">Tips: Wheel to zoom • Middle-drag or Shift+Drag to pan • Del to delete • Esc to exit tool</div>
+                      </div>
+                    </v-card-text>
+                  </v-card>
+                </v-col>
+
+                <v-col cols="12" md="3" class="sidebar pa-4">
+                  <div class="d-flex align-center justify-space-between mb-2">
+                    <div class="text-h6">Inspector</div>
+                    <v-btn icon="mdi-delete" variant="text" :disabled="!state.selection" @click="deleteSelection()"></v-btn>
+                  </div>
+                  <v-divider class="mb-3"/>
+
+                  <template v-if="selectedPeer">
+                    <div class="text-subtitle-1 mb-2">Peer</div>
+                    <v-text-field v-model="selectedPeer.name" label="Name" density="comfortable"></v-text-field>
+                    <v-text-field v-model="selectedPeer.ip" label="IP address" density="comfortable"></v-text-field>
+                    <v-select
+                      :items="[{title:'(none)', value:null}, ...state.subnets.map(s=>({title: s.name + ' ('+s.cidr+')', value: s.id}))]"
+                      v-model="selectedPeer.subnetId" label="Subnet" density="comfortable"
+                      @update:modelValue="v => assignToSubnet(selectedPeer.id, v)"
+                    ></v-select>
+                    <v-select
+                      :items="[{title:'Peer', value:'peer'},{title:'Router', value:'router'}]"
+                      v-model="selectedPeer.type" label="Type" density="comfortable"
+                    ></v-select>
+                  </template>
+
+                  <template v-else-if="selectedSubnet">
+                    <div class="text-subtitle-1 mb-2">Subnet</div>
+                    <v-text-field v-model="selectedSubnet.name" label="Name" density="comfortable"></v-text-field>
+                    <v-text-field v-model="selectedSubnet.cidr" label="CIDR" density="comfortable"></v-text-field>
+                    <v-slider v-model="selectedSubnet.radius" :min="80" :max="320" :step="2" label="Radius" show-ticks="always" tick-size="2" class="mt-6"></v-slider>
+                  </template>
+
+                  <template v-else>
+                    <div class="text-medium-emphasis">No selection</div>
+                  </template>
+
+                  <v-divider class="my-4"/>
+                  <div class="text-subtitle-2 mb-2">Topology JSON</div>
+                  <v-textarea
+                    :model-value="JSON.stringify({peers: state.peers, subnets: state.subnets, links: state.links}, null, 2)"
+                    auto-grow rows="8" readonly class="mono"
+                  ></v-textarea>
+
+                  <div class="d-flex ga-2 mt-2">
+                    <v-btn prepend-icon="mdi-content-copy" @click="navigator.clipboard.writeText(JSON.stringify({peers: state.peers, subnets: state.subnets, links: state.links}))">Copy</v-btn>
+                    <v-btn variant="tonal" prepend-icon="mdi-content-save" @click="() => {
+                      const data = JSON.stringify({peers: state.peers, subnets: state.subnets, links: state.links});
+                      const blob = new Blob([data], {type:'application/json'});
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a'); a.href = url; a.download = 'topology.json'; a.click(); URL.revokeObjectURL(url);
+                    }">Export</v-btn>
+                    <v-btn variant="tonal" prepend-icon="mdi-folder-open" @click="async () => {
+                      const [h] = await window.showOpenFilePicker({types:[{description:'JSON', accept:{'application/json':['.json']}}]});
+                      const f = await h.getFile(); const txt = await f.text();
+                      const o = JSON.parse(txt);
+                      if (o.peers && o.subnets && o.links) {
+                        state.peers.splice(0, state.peers.length, ...o.peers);
+                        state.subnets.splice(0, state.subnets.length, ...o.subnets);
+                        state.links.splice(0, state.links.length, ...o.links);
+                      }
+                    }">Import</v-btn>
+                  </div>
+                </v-col>
+              </v-row>
+            </v-container>
+          </v-main>
+        </v-app>
+      `,
+    }).use(vuetify).mount('#app');
+  </script>
+</body>
+</html>
