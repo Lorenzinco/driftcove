@@ -33,7 +33,7 @@ services:
     build: frontend
     container_name: driftcove-web
     depends_on:
-      - driftcove
+      - driftcove-backend
     ports:
       - "80:80"             # public web entry for the administration panel (add 443 if you configure TLS)
     restart: unless-stopped
