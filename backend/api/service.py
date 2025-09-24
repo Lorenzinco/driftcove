@@ -5,7 +5,7 @@ from backend.core.state_manager import state_manager
 from backend.core.database import db
 from backend.core.nftables import grant_service, revoke_service, grant_subnet_service, revoke_subnet_service
 from backend.core.models import Service
-from backend.core.logger import logging
+from backend.core.logger import logger as logging
 from typing import Annotated
 
 router = APIRouter(tags=["service"])

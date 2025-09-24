@@ -26,10 +26,11 @@ services:
       - "8000"
     ports:
       - "1194:1194/udp"     # WireGuard
+      - "8000:8000" # debug, access docs
     restart: unless-stopped
     networks: [webnet]
 
-  driftcove-frontend:
+  driftcove-web:
     build: frontend
     container_name: driftcove-web
     depends_on:

@@ -1,6 +1,6 @@
 import subprocess
 from typing import Iterable
-from backend.core.logger import logging
+from backend.core.logger import logger as logging
 import ipaddress
 import json
 import re

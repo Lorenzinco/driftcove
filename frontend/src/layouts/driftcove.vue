@@ -3,12 +3,12 @@
     <!-- ChatGPT-like right drawer -->
     <v-navigation-drawer
       v-if="showInspector"
-      app
-      location="right"
       v-model="store.inspectorOpen"
+      app
+      elevation="2"
+      location="right"
       :temporary="display.smAndDown.value"
       width="360"
-      elevation="2"
     >
       <NetworkInspector />
     </v-navigation-drawer>
@@ -29,7 +29,7 @@ import { useNetworkStore } from "@/stores/network";
 const store = useNetworkStore();
 const display = useDisplay();
 const route = useRoute();
-const showInspector = computed(() => route.path !== "/");
+const showInspector = computed(() => route.path.startsWith("/network"));
 </script>
 
 <style scoped>

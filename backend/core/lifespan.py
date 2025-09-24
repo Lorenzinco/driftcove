@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from backend.core.config import settings
 from backend.core.database import db
-from backend.core.logger import logging
+from backend.core.logger import logger as logging
 from backend.core.nftables import (
     flush_dcv, 
     ensure_subnet, 

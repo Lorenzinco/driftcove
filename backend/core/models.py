@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from pydantic import BaseModel, Field
 from backend.core.config import settings
-from backend.core.logger import logging
+from backend.core.logger import logger as logging
 
 class Service(BaseModel):
     port: int

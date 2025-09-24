@@ -5,7 +5,7 @@ from backend.core.config import verify_token, settings
 from backend.core.lock import lock
 from backend.core.database import db
 from backend.core.state_manager import state_manager
-from backend.core.logger import logging
+from backend.core.logger import logger as logging
 from backend.core.models import Peer, Subnet
 import ipaddress
 from backend.core.wireguard import (

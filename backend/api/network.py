@@ -7,7 +7,7 @@ from backend.core.models import Peer, Subnet, Service, Topology
 from backend.core.config import verify_token
 from backend.core.lock import lock
 from backend.core.database import db
-from backend.core.logger import logging
+from backend.core.logger import logger as logging
 from backend.core.lifespan import apply_config_from_database
 from backend.core.wireguard import getPeerInfo
 

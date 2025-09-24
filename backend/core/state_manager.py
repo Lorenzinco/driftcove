@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from backend.core.logger import logging
+from backend.core.logger import logger as logging
 from backend.core.config import settings
 from backend.core.database import db
 from backend.core.nftables import restore_dcv_table, backup_dcv_table

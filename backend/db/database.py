@@ -1,6 +1,6 @@
 import ipaddress, sqlite3
 from backend.core.models import Peer, Subnet, Service
-from backend.core.logger import logging
+from backend.core.logger import logger as logging
 
 
 class Database:

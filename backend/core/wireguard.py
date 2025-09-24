@@ -2,7 +2,7 @@ import os, subprocess, tempfile
 from fastapi import HTTPException
 from backend.core.models import Peer, Service
 from backend.core.config import settings
-from backend.core.logger import logging
+from backend.core.logger import logger as logging
 
 
 def flush_wireguard():

@@ -4,7 +4,7 @@ from backend.core.database import db
 from backend.core.state_manager import state_manager
 from backend.core.lock import lock
 from backend.core.models import Subnet, Peer
-from backend.core.logger import logging
+from backend.core.logger import logger as logging
 from typing import Annotated
 from backend.core.nftables import (
     add_member,
