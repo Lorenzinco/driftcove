@@ -36,9 +36,6 @@ class StateManager:
                 subprocess.run(["wg", "setconf", self.wg_interface, "/dev/stdin"],
                                input=self.wg_config_backup_text, text=True, check=True)
 
-            subprocess.run(["wg-quick", "down", self.wg_interface], check=False)
-            subprocess.run(["wg-quick", "up", self.wg_interface], check=True)
-
             db.rollback_transaction()
             logging.info("🔄 System state restored.")
         except Exception as e:
