@@ -9,7 +9,7 @@ services:
       - WG_DEFAULT_SUBNET=10.128.0.0/9
       - WAN_IF=eth0
       - WG_BACKEND_TCP_PORT=8000
-      - ENDPOINT=your.domain.com   # change this to your public domain or IP
+      - ENDPOINT=joker-rm.myfritz.link   # change this to your public domain or IP
       - API_TOKEN=supersecuretoken
     sysctls:
       net.ipv4.ip_forward: "1"

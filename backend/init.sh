@@ -110,8 +110,8 @@ nft 'add rule inet dcv fwd_est ct state established,related ct original ip saddr
 nft 'add rule inet dcv fwd_est ct state established,related ct original ip saddr . ct original ip daddr @admin_links     accept' 2>/dev/null || true
 nft 'add rule inet dcv fwd_est ct state established,related ct original ip saddr . ct original ip daddr @p2p_links       accept' 2>/dev/null || true
 # For services: per-protocol
-nft 'add rule inet dcv fwd_est ct state established,related ct original l4proto tcp ct original ip saddr . ct original ip daddr @svc_pairs_tcp accept' 2>/dev/null || true
-nft 'add rule inet dcv fwd_est ct state established,related ct original l4proto udp ct original ip saddr . ct original ip daddr @svc_pairs_udp accept' 2>/dev/null || true
+nft 'add rule inet dcv fwd_est ct state established,related ct original protocol tcp ct original ip saddr . ct original ip daddr @svc_pairs_tcp accept' 2>/dev/null || true
+nft 'add rule inet dcv fwd_est ct state established,related ct original protocol udp ct original ip saddr . ct original ip daddr @svc_pairs_udp accept' 2>/dev/null || true
 
 # --- wg dispatch: base -> allow -> drop ---
 nft 'flush chain inet dcv wg' 2>/dev/null || true

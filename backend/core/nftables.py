@@ -134,9 +134,9 @@ def ensure_table_and_chain(wg_if: str = "wg0", wg_server_ip: str = "10.128.0.1")
     _nft_try('add rule inet dcv fwd_est ct state established,related '
              'ct original ip saddr . ct original ip daddr @p2p_links accept')
     # Per-proto EST/REL for service flows
-    _nft_try('add rule inet dcv fwd_est ct state established,related ct original l4proto tcp '
+    _nft_try('add rule inet dcv fwd_est ct state established,related ct original protocol tcp '
              'ct original ip saddr . ct original ip daddr @svc_pairs_tcp accept')
-    _nft_try('add rule inet dcv fwd_est ct state established,related ct original l4proto udp '
+    _nft_try('add rule inet dcv fwd_est ct state established,related ct original protocol udp '
              'ct original ip saddr . ct original ip daddr @svc_pairs_udp accept')
 
     # WG pipeline
