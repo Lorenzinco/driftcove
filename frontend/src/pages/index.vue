@@ -3,13 +3,7 @@
     class="fill-height d-flex flex-column align-center justify-center"
   >
     <div class="d-flex align-center mb-10">
-      <v-img
-        alt="Driftcove Wordmark"
-        src="@/assets/logo.png"
-        width="360"
-        height="120"
-        style="object-fit: contain"
-      />
+      <BrandLogo height="72px" />
     </div>
     <v-card max-width="480" width="100%" elevation="4" class="pa-4">
       <v-card-title class="text-h6 d-flex justify-space-between align-center">
@@ -114,6 +108,7 @@
 </template>
 
 <script lang="ts" setup>
+import BrandLogo from '@/components/BrandLogo.vue'
 import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useBackendInteractionStore } from "@/stores/backendInteraction";

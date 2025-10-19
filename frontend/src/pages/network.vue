@@ -3,7 +3,7 @@
     <v-sheet rounded="lg" class="pa-0 w-100 layout-no-nested-right" elevation="2">
     <div class="d-flex align-center justify-space-between px-4 pt-4">
         <div class="d-flex align-center ga-2">
-            <v-img src="@/assets/logo.png" alt="Application Logo" class="w-25" />
+            <BrandLogo height="72px" />
             <v-btn :variant="store.tool==='select' ? 'elevated' : 'tonal'" @click="store.tool='select'" prepend-icon="mdi-cursor-default">Select</v-btn>
             <v-btn :variant="store.tool==='connect' ? 'elevated' : 'tonal'" @click="store.tool='connect'" prepend-icon="mdi-connection">Connect</v-btn>
             <v-btn :variant="store.tool==='cut' ? 'elevated' : 'tonal'" @click="store.tool='cut'" prepend-icon="mdi-content-cut">Cut</v-btn>
@@ -54,6 +54,7 @@
 
 
 <script setup lang="ts">
+    import BrandLogo from '@/components/BrandLogo.vue'
     import CanvasStage from '@/components/canvas/CanvasStage.vue'
     import SubnetContext from '@/components/canvas/overlays/SubnetContext.vue'
     import PeerDetailsDialog from '@/components/canvas/overlays/PeerDetailsDialog.vue'

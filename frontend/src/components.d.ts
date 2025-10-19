@@ -12,6 +12,7 @@ declare module 'vue' {
     AddServiceDialog: typeof import('./components/canvas/overlays/AddServiceDialog.vue')['default']
     AddSubnetDialog: typeof import('./components/canvas/overlays/AddSubnetDialog.vue')['default']
     AppFooter: typeof import('./components/AppFooter.vue')['default']
+    BrandLogo: typeof import('./components/BrandLogo.vue')['default']
     CanvasStage: typeof import('./components/canvas/CanvasStage.vue')['default']
     ConfirmCutLinkDialog: typeof import('./components/canvas/overlays/ConfirmCutLinkDialog.vue')['default']
     ConfirmDeletePeerDialog: typeof import('./components/canvas/overlays/ConfirmDeletePeerDialog.vue')['default']
