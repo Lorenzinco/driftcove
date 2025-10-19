@@ -36,7 +36,7 @@ def get_subnets(_: Annotated[str, Depends(verify_token)]):
 
 
 @router.get("/topology", tags=["network"])
-def get_topology(_: Annotated[str, Depends(verify_token)]) -> dict:
+def get_topology(_: Annotated[str, Depends(verify_token)]) -> dict[str,Topology]:
     """Fetch the full topology with granular error logging.
 
     Adds defensive try/except blocks around each DB aggregation to help locate

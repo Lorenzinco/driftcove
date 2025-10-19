@@ -4,13 +4,6 @@
   >
     <div class="d-flex align-center mb-10">
       <v-img
-        alt="Driftcove Shield"
-        src="@/assets/logo.svg"
-        height="88"
-        width="88"
-        style="object-fit: contain"
-      />
-      <v-img
         alt="Driftcove Wordmark"
         src="@/assets/logo.png"
         width="360"
