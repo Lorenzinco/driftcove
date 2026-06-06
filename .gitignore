@@ -1,4 +1,6 @@
 wireguard/*
 database/*
 captures/*
+__pycache__/
+*.py[cod]
 .venv
