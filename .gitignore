@@ -3,4 +3,7 @@ database/*
 captures/*
 __pycache__/
 *.py[cod]
+.DS_Store
 .venv
+.zed/
+.vscode/

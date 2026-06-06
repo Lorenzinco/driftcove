@@ -1,6 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Annotated
-import subprocess
 
 from backend.core.state_manager import state_manager
 from backend.core.models import Peer, Subnet, Service, Topology
@@ -12,6 +11,7 @@ from backend.core.lifespan import apply_config_from_database
 from backend.core.wireguard import getPeerInfo
 
 from backend.core.nftables import (
+    backup_dcv_table,
     connect_subnets_bidirectional_public,
     disconnect_subnets_bidirectional_public,
     grant_admin_subnet_to_subnet, revoke_admin_subnet_to_subnet
@@ -129,9 +129,8 @@ def get_nft_rules(_: Annotated[str, Depends(verify_token)]):
     Get the current nftables rules for the Driftcove table.
     """
     try:
-        out = subprocess.check_output(["nft", "list", "table", "inet", "dcv"], text=True)
-        rules = out
-    except subprocess.CalledProcessError as e:
+        rules = backup_dcv_table()
+    except Exception as e:
         logging.error(f"Failed to get nft rules: {e}")
         raise HTTPException(status_code=500, detail="Failed to get nft rules")
     return {"nft_rules": rules}
@@ -416,7 +415,7 @@ def update_coordinates(topology: Topology, _: Annotated[str, Depends(verify_toke
                 db.update_peer_coordinates(peer_in_db)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Cannot update coordinates: {e}")
-    
+
 @router.post("/admin/connect_subnets", tags=["network", "subnets"])
 def connect_admin_subnet_to_subnet(admin_subnet: str, subnet: str, _: Annotated[str, Depends(verify_token)]):
     """

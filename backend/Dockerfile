@@ -8,9 +8,29 @@ RUN apk add --no-cache \
     ca-certificates \
     iproute2 \
     nftables \
+    py3-nftables \
     tcpdump \
     wireguard-tools && \
     mkdir -p /etc/wireguard
+
+RUN python3 - <<'PY'
+import pathlib
+import shutil
+import sysconfig
+
+python_site = pathlib.Path(sysconfig.get_paths()["purelib"])
+candidates = list(pathlib.Path("/usr/lib").glob("python*/site-packages/nftables*"))
+if not candidates:
+    raise SystemExit("py3-nftables was installed but no nftables Python binding was found")
+for source in candidates:
+    target = python_site / source.name
+    if target.exists():
+        continue
+    if source.is_dir():
+        shutil.copytree(source, target)
+    else:
+        shutil.copy2(source, target)
+PY
 
 COPY ./requirements.txt /home/requirements.txt
 
