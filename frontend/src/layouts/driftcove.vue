@@ -20,16 +20,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
-import { useRoute } from "vue-router";
-import { useDisplay } from "vuetify";
-import NetworkInspector from "@/components/NetworkInspector.vue";
-import { useNetworkStore } from "@/stores/network";
+  import { computed } from 'vue'
+  import { useRoute } from 'vue-router'
+  import { useDisplay } from 'vuetify'
+  import NetworkInspector from '@/components/NetworkInspector.vue'
+  import { useNetworkStore } from '@/stores/network'
 
-const store = useNetworkStore();
-const display = useDisplay();
-const route = useRoute();
-const showInspector = computed(() => route.path.startsWith("/network"));
+  const store = useNetworkStore()
+  const display = useDisplay()
+  const route = useRoute()
+  const showInspector = computed(() => route.path.startsWith('/network'))
 </script>
 
 <style scoped>

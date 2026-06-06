@@ -1,0 +1,9 @@
+services:
+  driftcove-backend:
+    environment:
+      - WG_BACKEND_RELOAD=true
+    volumes:
+      - ./backend:/home/backend
+      - ./wireguard:/etc/wireguard
+      - ./database:/home/db
+      - ./captures:/var/log/captures

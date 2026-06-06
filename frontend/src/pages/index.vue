@@ -5,11 +5,11 @@
     <div class="d-flex align-center mb-10">
       <BrandLogo height="72px" />
     </div>
-    <v-card max-width="480" width="100%" elevation="4" class="pa-4">
+    <v-card class="pa-4" elevation="4" max-width="480" width="100%">
       <v-card-title class="text-h6 d-flex justify-space-between align-center">
         <span v-if="hasToken">API Token</span>
         <span v-else>Enter API Token</span>
-        <v-chip v-if="hasToken" size="small" color="primary" variant="flat">
+        <v-chip v-if="hasToken" color="primary" size="small" variant="flat">
           Active
         </v-chip>
       </v-card-title>
@@ -22,22 +22,22 @@
 
         <v-alert
           v-if="error"
-          type="error"
-          density="comfortable"
           class="mb-4"
+          density="comfortable"
           :text="error"
+          type="error"
         />
 
-        <v-form @submit.prevent="saveToken" v-if="editing || !hasToken">
+        <v-form v-if="editing || !hasToken" @submit.prevent="saveToken">
           <v-text-field
             v-model="tokenInput"
-            label="API Token"
-            :disabled="saving"
-            prepend-inner-icon="mdi-key"
-            variant="outlined"
-            density="comfortable"
             autocomplete="off"
+            density="comfortable"
+            :disabled="saving"
+            label="API Token"
+            prepend-inner-icon="mdi-key"
             required
+            variant="outlined"
           />
           <div class="text-caption text-medium-emphasis mb-4">
             The token is stored only in memory for this session (not persisted).
@@ -47,23 +47,23 @@
           </div>
           <v-btn
             block
+            class="mb-2"
             color="primary"
             :loading="saving"
-            type="submit"
             prepend-icon="mdi-content-save"
-            class="mb-2"
+            type="submit"
           >
             Save Token
           </v-btn>
-          <v-btn block variant="text" :disabled="saving" @click="cancelEdit">
+          <v-btn block :disabled="saving" variant="text" @click="cancelEdit">
             Cancel
           </v-btn>
         </v-form>
 
         <div v-else class="d-flex flex-column ga-2">
           <v-btn
-            color="primary"
             block
+            color="primary"
             prepend-icon="mdi-lan"
             @click="goNetwork"
           >
@@ -71,8 +71,8 @@
           </v-btn>
           <v-btn
             block
-            variant="tonal"
             prepend-icon="mdi-pencil"
+            variant="tonal"
             @click="startEdit"
           >
             Change Token
@@ -80,8 +80,8 @@
           <v-btn
             block
             color="error"
-            variant="text"
             prepend-icon="mdi-delete"
+            variant="text"
             @click="clearToken"
           >
             Clear Token
@@ -91,11 +91,11 @@
       <v-divider />
       <v-card-actions class="justify-end">
         <v-btn
-          variant="text"
           v-if="hasToken && !editing"
-          @click="reloadData"
           :loading="reloading"
           prepend-icon="mdi-refresh"
+          variant="text"
+          @click="reloadData"
         >
           Refresh Topology
         </v-btn>
@@ -108,91 +108,91 @@
 </template>
 
 <script lang="ts" setup>
-import BrandLogo from '@/components/BrandLogo.vue'
-import { ref, computed, onMounted } from "vue";
-import { useRouter } from "vue-router";
-import { useBackendInteractionStore } from "@/stores/backendInteraction";
+  import { computed, onMounted, ref } from 'vue'
+  import { useRouter } from 'vue-router'
+  import BrandLogo from '@/components/BrandLogo.vue'
+  import { useBackendInteractionStore } from '@/stores/backendInteraction'
 
-const backend = useBackendInteractionStore();
-const router = useRouter();
+  const backend = useBackendInteractionStore()
+  const router = useRouter()
 
-const tokenInput = ref("");
-const saving = ref(false);
-const reloading = ref(false);
-const error = ref("");
-const editing = ref(false);
+  const tokenInput = ref('')
+  const saving = ref(false)
+  const reloading = ref(false)
+  const error = ref('')
+  const editing = ref(false)
 
-const hasToken = computed(() => !!backend.apiToken);
+  const hasToken = computed(() => !!backend.apiToken)
 
-function startEdit() {
-  editing.value = true;
-  tokenInput.value = backend.apiToken;
-  error.value = "";
-}
-function cancelEdit() {
-  if (!hasToken.value) return;
-  editing.value = false;
-  error.value = "";
-}
-function clearToken() {
-  backend.setApiToken("");
-  tokenInput.value = "";
-  editing.value = true;
-}
-
-async function saveToken() {
-  if (!tokenInput.value.trim()) {
-    error.value = "Token is required";
-    return;
+  function startEdit () {
+    editing.value = true
+    tokenInput.value = backend.apiToken
+    error.value = ''
   }
-  saving.value = true;
-  error.value = "";
-  try {
-    backend.setApiToken(tokenInput.value.trim());
-    editing.value = false;
-    reloading.value = true;
-    await backend.fetchTopology(true);
-    // On successful fetch redirect to network
-    router.push("/network");
-  } catch (e: any) {
-    error.value = e?.message || "Failed to save token";
-  } finally {
-    saving.value = false;
-    reloading.value = false;
+  function cancelEdit () {
+    if (!hasToken.value) return
+    editing.value = false
+    error.value = ''
   }
-}
-
-async function reloadData() {
-  if (!hasToken.value) return;
-  reloading.value = true;
-  error.value = "";
-  try {
-    await backend.fetchTopology(true);
-  } catch (e: any) {
-    error.value = e?.message || "Failed to refresh";
-  } finally {
-    reloading.value = false;
+  function clearToken () {
+    backend.setApiToken('')
+    tokenInput.value = ''
+    editing.value = true
   }
-}
 
-function goNetwork() {
-  router.push("/network");
-}
-
-onMounted(async () => {
-  if (!hasToken.value) {
-    editing.value = true;
-  } else {
-    // If a token already exists try an immediate fetch then redirect
+  async function saveToken () {
+    if (!tokenInput.value.trim()) {
+      error.value = 'Token is required'
+      return
+    }
+    saving.value = true
+    error.value = ''
     try {
-      reloading.value = true;
-      await backend.fetchTopology(true);
-      router.push("/network");
+      backend.setApiToken(tokenInput.value.trim())
+      editing.value = false
+      reloading.value = true
+      await backend.fetchTopology(true)
+      // On successful fetch redirect to network
+      router.push('/network')
+    } catch (error_: any) {
+      error.value = error_?.message || 'Failed to save token'
     } finally {
-      reloading.value = false;
+      saving.value = false
+      reloading.value = false
     }
   }
-});
+
+  async function reloadData () {
+    if (!hasToken.value) return
+    reloading.value = true
+    error.value = ''
+    try {
+      await backend.fetchTopology(true)
+    } catch (error_: any) {
+      error.value = error_?.message || 'Failed to refresh'
+    } finally {
+      reloading.value = false
+    }
+  }
+
+  function goNetwork () {
+    router.push('/network')
+  }
+
+  onMounted(async () => {
+    if (hasToken.value) {
+      // If a token already exists try an immediate fetch then redirect
+      try {
+        reloading.value = true
+        await backend.fetchTopology(true)
+        router.push('/network')
+      } finally {
+        reloading.value = false
+      }
+    } else {
+      editing.value = true
+    }
+  })
 </script>
 
 <style scoped>

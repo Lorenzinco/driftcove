@@ -1,167 +1,180 @@
 <template>
-    <v-container fluid class="pa-4 fill-height w-100 network-page" :class="{'inspector-open': store.inspectorOpen}">
-    <v-sheet rounded="lg" class="pa-0 w-100 layout-no-nested-right" elevation="2">
-    <div class="d-flex align-center justify-space-between px-4 pt-4">
-        <div class="d-flex align-center ga-2">
-            <BrandLogo height="72px" />
-            <v-btn :variant="store.tool==='select' ? 'elevated' : 'tonal'" @click="store.tool='select'" prepend-icon="mdi-cursor-default">Select</v-btn>
-            <v-btn :variant="store.tool==='connect' ? 'elevated' : 'tonal'" @click="store.tool='connect'" prepend-icon="mdi-connection">Connect</v-btn>
-            <v-btn :variant="store.tool==='cut' ? 'elevated' : 'tonal'" @click="store.tool='cut'" prepend-icon="mdi-content-cut">Cut</v-btn>
-            <v-divider vertical class="mx-2" />
-            <v-btn :variant="store.tool==='add-subnet' ? 'elevated' : 'tonal'" @click="store.tool='add-subnet'" prepend-icon="mdi-lan">Subnet</v-btn>
-            <v-switch v-model="store.grid" inset hide-details label="Grid" class="ma-0 pa-0 switch-inline" style="min-width:auto;" />
-        </div>
-        <div class="text-caption text-medium-emphasis">
-            Zoom: {{ (store.zoom*100).toFixed(0) }}% &nbsp; | &nbsp; Pan: {{ store.pan.x.toFixed(0) }}, {{ store.pan.y.toFixed(0) }}
-            <v-btn
-            :prepend-icon="store.inspectorOpen ? 'mdi-chevron-right' : 'mdi-chevron-left'"
-            @click="store.toggleInspector()"
-            />
-        </div>
-    </div>
+  <v-container
+    class="pa-4 fill-height w-100 network-page"
+    :class="{ 'inspector-open': store.inspectorOpen }"
+    fluid
+  >
+    <v-sheet
+      class="pa-0 w-100 layout-no-nested-right"
+      elevation="2"
+      rounded="lg"
+    >
+      <NetworkToolbar />
 
-
-    <div style="height: 77vh;" class="px-3 pb-3 w-100">
-                <CanvasStage ref="canvasStage" @subnet-click="onSubnetClick" @peer-click="onPeerClick" @canvas-context="onCanvasContext" @add-subnet-request="onAddSubnetRequest">
-                    <SubnetContext ref="subnetContext" />
-                    <NetworkContext ref="networkContext" />
-                    <PeerContext ref="peerContext" />
-                    <PeerDetailsDialog />
-                    <AddSubnetDialog ref="addSubnetDialog" />
-                    <LinkTypeDialog ref="linkTypeDialog" />
-                    <CutLinkDialog ref="cutLinkDialog" />
-                </CanvasStage>
-    </div>
+      <div class="px-3 pb-3 w-100" style="height: 77vh">
+        <CanvasStage
+          ref="canvasStage"
+          @add-subnet-request="onAddSubnetRequest"
+          @canvas-context="onCanvasContext"
+          @peer-click="onPeerClick"
+          @subnet-click="onSubnetClick"
+        >
+          <SubnetContext ref="subnetContext" />
+          <NetworkContext ref="networkContext" />
+          <PeerContext ref="peerContext" />
+          <PeerDetailsDialog />
+          <AddSubnetDialog ref="addSubnetDialog" />
+          <LinkTypeDialog ref="linkTypeDialog" />
+          <CutLinkDialog ref="cutLinkDialog" />
+        </CanvasStage>
+      </div>
     </v-sheet>
 
-
-    <v-card class="mt-4 w-100" variant="tonal">
-    <v-card-text>
-    <div class="d-flex align-center ga-6">
-        <div><span class="legend-dot" style="background:#7AD7F0"></span> Peer (online)</div>
-        <div><span class="legend-dot" style="background:#9CA3AF"></span> Peer (offline)</div>
-        <div>
-            <span style="display:inline-block;width:28px;height:0;border-top:2px dotted #7CF29A;margin-right:8px;vertical-align:middle;"></span>
-            Subnet (boundary)
-        </div>
-        <v-spacer />
-        <div class="text-caption text-medium-emphasis">Wheel to zoom • Middle drag or Shift+Drag to pan • Del to delete • Esc to exit tool</div>
-    </div>
-    </v-card-text>
-    </v-card>
-    </v-container>
+    <NetworkLegend />
+  </v-container>
 </template>
 
-
 <script setup lang="ts">
-    import BrandLogo from '@/components/BrandLogo.vue'
-    import CanvasStage from '@/components/canvas/CanvasStage.vue'
-    import SubnetContext from '@/components/canvas/overlays/SubnetContext.vue'
-    import PeerDetailsDialog from '@/components/canvas/overlays/PeerDetailsDialog.vue'
-    import PeerContext from '@/components/canvas/overlays/PeerContext.vue'
-    import NetworkContext from '@/components/canvas/overlays/NetworkContext.vue'
-    import { useNetworkStore } from '@/stores/network'
-    import AddSubnetDialog from '@/components/canvas/overlays/AddSubnetDialog.vue'
-    import LinkTypeDialog from '@/components/canvas/overlays/LinkTypeDialog.vue'
-    import CutLinkDialog from '@/components/canvas/overlays/CutLinkDialog.vue'
-    import { onMounted, onBeforeUnmount } from 'vue'
-    import { useBackendInteractionStore } from '@/stores/backendInteraction'
+  import { onBeforeUnmount, onMounted, ref } from 'vue'
+  import CanvasStage from '@/components/canvas/CanvasStage.vue'
+  import AddSubnetDialog from '@/components/canvas/overlays/AddSubnetDialog.vue'
+  import CutLinkDialog from '@/components/canvas/overlays/CutLinkDialog.vue'
+  import LinkTypeDialog from '@/components/canvas/overlays/LinkTypeDialog.vue'
+  import NetworkContext from '@/components/canvas/overlays/NetworkContext.vue'
+  import PeerContext from '@/components/canvas/overlays/PeerContext.vue'
+  import PeerDetailsDialog from '@/components/canvas/overlays/PeerDetailsDialog.vue'
+  import SubnetContext from '@/components/canvas/overlays/SubnetContext.vue'
+  import NetworkLegend from '@/components/network/NetworkLegend.vue'
+  import NetworkToolbar from '@/components/network/NetworkToolbar.vue'
+  import { useBackendInteractionStore } from '@/stores/backendInteraction'
+  import { useNetworkStore } from '@/stores/network'
+  import { pairKey } from '@/utils/networkTopology'
 
-    const store = useNetworkStore()
-    const subnetContext = ref<InstanceType<typeof SubnetContext> | null>(null)
-    const peerContext = ref<InstanceType<typeof PeerContext> | null>(null)
-    const networkContext = ref<InstanceType<typeof NetworkContext> | null>(null)
-    const addSubnetDialog = ref<InstanceType<typeof AddSubnetDialog> | null>(null)
-    const canvasStage = ref<any>(null)
-    const linkTypeDialog = ref<InstanceType<typeof LinkTypeDialog> | null>(null)
-    const cutLinkDialog = ref<InstanceType<typeof CutLinkDialog> | null>(null)
-    const backend = useBackendInteractionStore()
+  const store = useNetworkStore()
+  const backend = useBackendInteractionStore()
 
-    function onSubnetClick(e:{ id:string; x:number; y:number }) {
-        // Only open the subnet context menu while in select tool
-        if (store.tool !== 'select') return;
-        if (!e.id) { subnetContext.value?.hideMenu?.(); return; }
-        subnetContext.value?.showMenu(e);
-    }
-    function onPeerClick(e:{ id:string; x:number; y:number }){
-        if (store.tool !== 'select') return;
-        if (!e.id) { peerContext.value?.hideMenu?.(); return; }
-        const x = typeof e.x === 'number' ? e.x : (window as any).__lastPointerScreen?.x || 0;
-        const y = typeof e.y === 'number' ? e.y : (window as any).__lastPointerScreen?.y || 0;
-        peerContext.value?.showMenu({ id: e.id, x, y });
-    }
-    function onCanvasContext(e:{ x:number; y:number }){
-        if (store.tool !== 'select') return;
-        networkContext.value?.showMenu(e);
-    }
-    function onAddSubnetRequest(pos:{ worldX:number; worldY:number }) { addSubnetDialog.value?.showAt(pos.worldX, pos.worldY) }
+  const subnetContext = ref<InstanceType<typeof SubnetContext> | null>(null)
+  const peerContext = ref<InstanceType<typeof PeerContext> | null>(null)
+  const networkContext = ref<InstanceType<typeof NetworkContext> | null>(null)
+  const addSubnetDialog = ref<InstanceType<typeof AddSubnetDialog> | null>(null)
+  const canvasStage = ref<InstanceType<typeof CanvasStage> | null>(null)
+  const linkTypeDialog = ref<InstanceType<typeof LinkTypeDialog> | null>(null)
+  const cutLinkDialog = ref<InstanceType<typeof CutLinkDialog> | null>(null)
 
-    function handleSubnetDialogClosed(){ canvasStage.value?.clearGhostSubnet?.(); }
-    function handleRequestLinkType(e: any){
-        const { fromId, toId, fromType, toType } = e.detail||{};
-        const from = fromId || e.detail?.from; const to = toId || e.detail?.to;
-        if (from && to) linkTypeDialog.value?.show(from, to, { fromType, toType });
+  function onSubnetClick (event: { id: string, x: number, y: number }) {
+    if (store.tool !== 'select') return
+    if (!event.id) {
+      subnetContext.value?.hideMenu?.()
+      return
     }
-    function handleRequestCutLink(e:any){ const detail = e.detail||{}; if (detail && detail.links) cutLinkDialog.value?.show(detail); }
-    function handleRequestAddSubnetAtScreen(e:any){
-        const { screenX, screenY } = e.detail || {};
-        if (typeof screenX !== 'number' || typeof screenY !== 'number') return;
-        // Convert screen to world using canvas stage helpers: approximate via store pan/zoom
-        const worldX = (screenX - store.pan.x)/store.zoom;
-        const worldY = (screenY - store.pan.y)/store.zoom;
-        addSubnetDialog.value?.showAt(worldX, worldY);
+    subnetContext.value?.showMenu(event)
+  }
+
+  function onPeerClick (event: { id: string, x: number, y: number }) {
+    if (store.tool !== 'select') return
+    if (!event.id) {
+      peerContext.value?.hideMenu?.()
+      return
     }
-    function handleRequestDelete(e:any){
-        const detail = e.detail||{};
-        const type = detail.type; const id = detail.id;
-        if (!type || !id) return;
-        if (type==='peer'){
-            // Show existing peer context delete dialog by simulating context action
-            // PeerContext exposes no direct method for delete, so dispatch a synthetic menu flow:
-            // We can trigger its confirm dialog by emitting a custom event it listens to? Simpler: add method via ref.
-            // Instead, leverage its showMenu + confirmDelete sequence: expose showMenu then call internal confirmDelete via event.
-            // Since we don't have direct confirmDelete exported, dispatch a custom event the component can listen to.
-            window.dispatchEvent(new CustomEvent('peer-context-request-delete', { detail: { id } }));
-        } else if (type==='subnet') {
-            window.dispatchEvent(new CustomEvent('subnet-context-request-delete', { detail: { id } }));
-        } else if (type==='link') {
-            // Build link list for pairKey to reuse CutLinkDialog
-            const pairKey = id;
-            function mk(a:string,b:string){ return a < b ? `${a}::${b}` : `${b}::${a}`; }
-            const related = store.links.filter(l=> mk(l.fromId,l.toId)===pairKey);
-            if (related.length){
-                cutLinkDialog.value?.show({ pairKey, links: related });
-            }
-        }
-    }
-    onMounted(()=> { 
-        // Poll topology to refresh peer RX/TX and handshakes frequently
-        backend.startTopologyPolling(2000); 
-        window.addEventListener('add-subnet-dialog-closed', handleSubnetDialogClosed); 
-        window.addEventListener('request-link-type', handleRequestLinkType);
-        window.addEventListener('request-cut-link', handleRequestCutLink);
-        window.addEventListener('request-add-subnet-at-screen', handleRequestAddSubnetAtScreen);
-        window.addEventListener('request-delete', handleRequestDelete);
+
+    const lastPointer = (window as any).__lastPointerScreen
+    peerContext.value?.showMenu({
+      id: event.id,
+      x: typeof event.x === 'number' ? event.x : lastPointer?.x || 0,
+      y: typeof event.y === 'number' ? event.y : lastPointer?.y || 0,
     })
-    onBeforeUnmount(()=> { 
-        backend.stopTopologyPolling(); 
-        window.removeEventListener('add-subnet-dialog-closed', handleSubnetDialogClosed); 
-        window.removeEventListener('request-link-type', handleRequestLinkType);
-        window.removeEventListener('request-cut-link', handleRequestCutLink);
-        window.removeEventListener('request-add-subnet-at-screen', handleRequestAddSubnetAtScreen);
-        window.removeEventListener('request-delete', handleRequestDelete);
-    })
+  }
+
+  function onCanvasContext (event: { x: number, y: number }) {
+    if (store.tool === 'select') networkContext.value?.showMenu(event)
+  }
+
+  function onAddSubnetRequest (position: { worldX: number, worldY: number }) {
+    addSubnetDialog.value?.showAt(position.worldX, position.worldY)
+  }
+
+  function handleSubnetDialogClosed () {
+    canvasStage.value?.clearGhostSubnet?.()
+  }
+
+  function handleRequestLinkType (event: CustomEvent) {
+    const { fromId, toId, fromType, toType } = event.detail || {}
+    const from = fromId || event.detail?.from
+    const to = toId || event.detail?.to
+    if (from && to) linkTypeDialog.value?.show(from, to, { fromType, toType })
+  }
+
+  function handleRequestCutLink (event: CustomEvent) {
+    const detail = event.detail || {}
+    if (detail.links) cutLinkDialog.value?.show(detail)
+  }
+
+  function handleRequestAddSubnetAtScreen (event: CustomEvent) {
+    const { screenX, screenY } = event.detail || {}
+    if (typeof screenX !== 'number' || typeof screenY !== 'number') return
+
+    addSubnetDialog.value?.showAt(
+      (screenX - store.pan.x) / store.zoom,
+      (screenY - store.pan.y) / store.zoom,
+    )
+  }
+
+  function handleRequestDelete (event: CustomEvent) {
+    const { type, id } = event.detail || {}
+    if (!type || !id) return
+
+    if (type === 'peer') {
+      window.dispatchEvent(
+        new CustomEvent('peer-context-request-delete', { detail: { id } }),
+      )
+      return
+    }
+    if (type === 'subnet') {
+      window.dispatchEvent(
+        new CustomEvent('subnet-context-request-delete', { detail: { id } }),
+      )
+      return
+    }
+    if (type === 'link') {
+      const related = store.links.filter(
+        link => pairKey(link.fromId, link.toId) === id,
+      )
+      if (related.length > 0)
+        cutLinkDialog.value?.show({ pairKey: id, links: related })
+    }
+  }
+
+  const windowEventHandlers = [
+    ['add-subnet-dialog-closed', handleSubnetDialogClosed],
+    ['request-link-type', handleRequestLinkType],
+    ['request-cut-link', handleRequestCutLink],
+    ['request-add-subnet-at-screen', handleRequestAddSubnetAtScreen],
+    ['request-delete', handleRequestDelete],
+  ] as const
+
+  onMounted(() => {
+    backend.startTopologyPolling(2000)
+    for (const [eventName, handler] of windowEventHandlers) {
+      window.addEventListener(eventName, handler as EventListener)
+    }
+  })
+
+  onBeforeUnmount(() => {
+    backend.stopTopologyPolling()
+    for (const [eventName, handler] of windowEventHandlers) {
+      window.removeEventListener(eventName, handler as EventListener)
+    }
+  })
 </script>
 
-
 <style scoped>
-    .legend-dot { width: 12px; height: 12px; border-radius: 9999px; display: inline-block; margin-right: 8px; }
-    .switch-inline :deep(.v-label) { white-space: nowrap; display:inline-block; }
-        .layout-no-nested-right { /* prevent cascading double right padding from drawer variable */
-            --v-layout-right: 0 !important;
-            padding-right: 0 !important;
-            margin-right: 0 !important;
-        }
-        /* Only zero for nested content while keeping overall app shift */
-        .network-page.inspector-open > .layout-no-nested-right { --v-layout-right: 0 !important; }
+.layout-no-nested-right {
+  --v-layout-right: 0 !important;
+  padding-right: 0 !important;
+  margin-right: 0 !important;
+}
+
+.network-page.inspector-open > .layout-no-nested-right {
+  --v-layout-right: 0 !important;
+}
 </style>

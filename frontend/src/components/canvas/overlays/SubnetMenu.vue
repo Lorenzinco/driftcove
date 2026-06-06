@@ -6,39 +6,39 @@
       :style="{ left: x + 'px', top: y + 'px', transform: 'translateY(4px)' }"
       @mousedown.stop
     >
-      <v-card elevation="8" density="comfortable" class="pa-1 subnet-card" rounded="lg">
-        <v-list density="compact" nav class="py-1" style="min-width:230px;">
+      <v-card class="pa-1 subnet-card" density="comfortable" elevation="8" rounded="lg">
+        <v-list class="py-1" density="compact" nav style="min-width:230px;">
           <v-list-subheader class="text-overline opacity-70">Subnet Actions</v-list-subheader>
           <v-list-item
-            value="info"
             prepend-icon="mdi-information-outline"
             title="Subnet Info"
+            value="info"
             @click="$emit('info')"
           />
           <v-list-item
-            value="create-subnet"
             prepend-icon="mdi-access-point-network"
             title="Create Subnet here"
+            value="create-subnet"
             @click="$emit('create-subnet')"
           />
           <v-list-item
-            value="add-peer"
             prepend-icon="mdi-account-plus"
             title="Add Peer in this Subnet"
+            value="add-peer"
             @click="$emit('create-peer')"
           />
           <v-list-item
-            value="connect"
             prepend-icon="mdi-connection"
             title="Connect…"
+            value="connect"
             @click="$emit('connect')"
           />
           <v-divider class="my-1" />
           <v-list-item
-            value="delete"
+            class="text-error"
             prepend-icon="mdi-delete-outline"
             title="Delete Subnet"
-            class="text-error"
+            value="delete"
             @click="$emit('delete')"
           />
         </v-list>
@@ -48,8 +48,8 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{ open: boolean; x: number; y: number }>();
-defineEmits<{ (e:'create-peer'): void; (e:'info'): void; (e:'create-subnet'): void; (e:'connect'): void; (e:'delete'): void }>();
+  defineProps<{ open: boolean, x: number, y: number }>()
+  defineEmits<{ (e: 'create-peer'): void, (e: 'info'): void, (e: 'create-subnet'): void, (e: 'connect'): void, (e: 'delete'): void }>()
 </script>
 
 <style scoped>

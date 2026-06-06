@@ -1,11 +1,30 @@
 <template>
-  <v-footer app height="44" class="footer-root">
+  <v-footer app class="footer-root" height="44">
     <div class="social-link d-flex align-center">
-      <a href="https://diocane.com" target="_blank" rel="noopener" class="d-inline-flex align-center link-part logo-wrap" title="Driftcove Docs">
-        <v-img src="@/assets/logo.svg" width="30" height="30" class="me-2 footer-logo" cover alt="Driftcove" />
+      <a
+        class="d-inline-flex align-center link-part logo-wrap"
+        href="https://diocane.com"
+        rel="noopener"
+        target="_blank"
+        title="Driftcove Docs"
+      >
+        <v-img
+          alt="Driftcove"
+          class="me-2 footer-logo"
+          cover
+          height="30"
+          src="@/assets/logo.svg"
+          width="30"
+        />
       </a>
-      <a href="https://github.com/lorenzinco/driftcove" target="_blank" rel="noopener" class="d-inline-flex align-center link-part" title="GitHub">
-        <v-icon icon="mdi-github" size="18" class="github-icon" />
+      <a
+        class="d-inline-flex align-center link-part"
+        href="https://github.com/lorenzinco/driftcove"
+        rel="noopener"
+        target="_blank"
+        title="GitHub"
+      >
+        <v-icon class="github-icon" icon="mdi-github" size="18" />
       </a>
     </div>
 
@@ -21,7 +40,7 @@
         rel="noopener noreferrer"
         target="_blank"
       >
-        MIT License
+        GPL 3.0 License
       </a>
     </div>
   </v-footer>
@@ -38,7 +57,7 @@
       title: 'Driftcove GitHub',
       icon: `mdi-github`,
       href: 'https://github.com/lorenzinco/driftcove',
-    }
+    },
   ]
 </script>
 

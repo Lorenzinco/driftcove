@@ -6,13 +6,13 @@
       :style="{ left: x + 'px', top: y + 'px', transform: 'translateY(4px)' }"
       @mousedown.stop
     >
-      <v-card elevation="8" density="comfortable" class="pa-1 network-card" rounded="lg">
-        <v-list density="compact" nav class="py-1" style="min-width:230px;">
+      <v-card class="pa-1 network-card" density="comfortable" elevation="8" rounded="lg">
+        <v-list class="py-1" density="compact" nav style="min-width:230px;">
           <v-list-subheader class="text-overline opacity-70">Network Actions</v-list-subheader>
           <v-list-item
-            value="create-subnet"
             prepend-icon="mdi-access-point-network"
             title="Create Subnet here"
+            value="create-subnet"
             @click="$emit('create-subnet')"
           />
         </v-list>
@@ -22,8 +22,8 @@
 </template>
 
 <script setup lang="ts">
-withDefaults(defineProps<{ open:boolean; x:number; y:number }>(), { x:0, y:0 });
-defineEmits<{ (e:'create-subnet'):void }>();
+  withDefaults(defineProps<{ open: boolean, x: number, y: number }>(), { x: 0, y: 0 })
+  defineEmits<{ (e: 'create-subnet'): void }>()
 </script>
 
 <style scoped>

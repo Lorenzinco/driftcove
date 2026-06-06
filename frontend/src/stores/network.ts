@@ -1,19 +1,19 @@
-import type { Link, Peer, ServiceInfo, Subnet, Tool } from "@/types/network";
-import { defineStore } from "pinia";
+import type { Link, Peer, ServiceInfo, Subnet, Tool } from '@/types/network'
+import { defineStore } from 'pinia'
 
 // Local helper type for service info (embedded inside Peer.services)
 
-function uid(prefix = "id") {
-  return prefix + Math.random().toString(36).slice(2, 9);
+function uid (prefix = 'id') {
+  return prefix + Math.random().toString(36).slice(2, 9)
 }
 
-export const useNetworkStore = defineStore("network", {
+export const useNetworkStore = defineStore('network', {
   state: () => ({
     peers: [
       {
-        id: uid("p_"),
-        name: "Peer 1",
-        ip: "10.0.1.10",
+        id: uid('p_'),
+        name: 'Peer 1',
+        ip: '10.0.1.10',
         subnetId: null,
         x: 540,
         y: 300,
@@ -27,24 +27,24 @@ export const useNetworkStore = defineStore("network", {
     ],
     subnets: [
       {
-        id: uid("s_"),
-        name: "Office LAN",
-        cidr: "10.0.1.0/24",
+        id: uid('s_'),
+        name: 'Office LAN',
+        cidr: '10.0.1.0/24',
         x: 520,
         y: 300,
         width: 360,
         height: 240,
-        rgba: 0x00ff00e5,
+        rgba: 0x00_ff_00_e5,
       } as Subnet,
     ],
     links: [] as Link[],
     // selection.id semantics for type==='link': stores a pair key "aId::bId" (sorted) representing ALL links between those two peers
     selection: null as null | {
-      type: "peer" | "subnet" | "link";
-      name: string;
-      id: string;
+      type: 'peer' | 'subnet' | 'link'
+      name: string
+      id: string
     },
-    tool: "select" as Tool,
+    tool: 'select' as Tool,
     pan: { x: 0, y: 0, dragging: false, sx: 0, sy: 0 },
     zoom: 1,
     grid: true,
@@ -58,129 +58,154 @@ export const useNetworkStore = defineStore("network", {
   }),
 
   getters: {
-    selectedPeer(state) {
-      return state.selection?.type === "peer"
-        ? state.peers.find((p) => p.id === state.selection!.id) || null
-        : null;
+    selectedPeer (state) {
+      return state.selection?.type === 'peer'
+        ? state.peers.find(p => p.id === state.selection!.id) || null
+        : null
     },
-    selectedSubnet(state) {
-      return state.selection?.type === "subnet"
-        ? state.subnets.find((s) => s.id === state.selection!.id) || null
-        : null;
+    selectedSubnet (state) {
+      return state.selection?.type === 'subnet'
+        ? state.subnets.find(s => s.id === state.selection!.id) || null
+        : null
     },
     // All links between a selected peer pair (if selection.type==='link')
-    selectedLinks(state) {
-      if (state.selection?.type !== "link") return [] as Link[];
-      const key = state.selection.id;
-      function pairKey(a: string, b: string) {
-        return a < b ? `${a}::${b}` : `${b}::${a}`;
+    selectedLinks (state) {
+      if (state.selection?.type !== 'link') {
+        return [] as Link[]
       }
-      return state.links.filter((l) => pairKey(l.fromId, l.toId) === key);
+      const key = state.selection.id
+      function pairKey (a: string, b: string) {
+        return a < b ? `${a}::${b}` : `${b}::${a}`
+      }
+      return state.links.filter(l => pairKey(l.fromId, l.toId) === key)
     },
     // Backwards compatibility: first link in selection (if any)
-    selectedLink(): Link | null {
+    selectedLink (): Link | null {
       // @ts-ignore access root state via this
-      const arr: Link[] = (this as any).selectedLinks;
-      return arr.length ? arr[0] : null;
+      const arr: Link[] = (this as any).selectedLinks
+      return arr.length > 0 ? arr[0] : null
     },
     // True if current signature differs from baseline (after at least one baseline set)
-    topologyDirty(): boolean {
-      const sig = (this as any).computeSignature();
-      if (this.baselineSignature == null) return false;
-      return sig !== this.baselineSignature;
+    topologyDirty (): boolean {
+      const sig = (this as any).computeSignature()
+      if (this.baselineSignature == null) {
+        return false
+      }
+      return sig !== this.baselineSignature
     },
   },
 
   actions: {
-    toggleInspector() {
-      this.inspectorOpen = !this.inspectorOpen;
+    toggleInspector () {
+      this.inspectorOpen = !this.inspectorOpen
     },
-    openPeerDetails(peerId: string) {
+    openPeerDetails (peerId: string) {
       this.selection = {
-        type: "peer",
+        type: 'peer',
         id: peerId,
-        name: this.peers.find((p) => p.id === peerId)?.name || "Peer",
-      };
-      this.peerDetailsRequestId = peerId;
-      this.peerDetailsRequestVersion++;
+        name: this.peers.find(p => p.id === peerId)?.name || 'Peer',
+      }
+      this.peerDetailsRequestId = peerId
+      this.peerDetailsRequestVersion++
     },
-    closePeerDetails() {
+    closePeerDetails () {
       /* hook for future side-effects */
     },
 
     // (Peer add functionality removed per latest requirements)
 
-    addSubnetAt(x: number, y: number, rgba: number = 0x00ff00e5) {
-      const id = uid("s_");
+    addSubnetAt (x: number, y: number, rgba = 0x00_ff_00_e5) {
+      const id = uid('s_')
       this.subnets.push({
         id,
-        name: "Subnet",
-        cidr: "10.0.0.0/24",
+        name: 'Subnet',
+        cidr: '10.0.0.0/24',
         x,
         y,
         width: 320,
         height: 200,
         rgba,
-      });
-      this.selection = { type: "subnet", id, name: "Subnet" };
-      this.tool = "select";
+      })
+      this.selection = { type: 'subnet', id, name: 'Subnet' }
+      this.tool = 'select'
     },
 
-    deleteSelection() {
-      if (!this.selection) return;
-      if (this.selection.type === "peer") {
-        this.links = this.links.filter(
-          (l) =>
-            l.fromId !== this.selection!.id && l.toId !== this.selection!.id,
-        );
-        this.peers = this.peers.filter((p) => p.id !== this.selection!.id);
-      } else if (this.selection.type === "subnet") {
-        this.peers.forEach((p) => {
-          if (p.subnetId === this.selection!.id) p.subnetId = null;
-        });
-        this.subnets = this.subnets.filter((s) => s.id !== this.selection!.id);
-      } else if (this.selection.type === "link") {
-        // selection.id is pair key
-        const pairKey = this.selection.id;
-        function mk(a: string, b: string) {
-          return a < b ? `${a}::${b}` : `${b}::${a}`;
-        }
-        this.links = this.links.filter((l) => mk(l.fromId, l.toId) !== pairKey);
+    deleteSelection () {
+      if (!this.selection) {
+        return
       }
-      this.selection = null;
+      switch (this.selection.type) {
+        case 'peer': {
+          this.links = this.links.filter(
+            l =>
+              l.fromId !== this.selection!.id && l.toId !== this.selection!.id,
+          )
+          this.peers = this.peers.filter(p => p.id !== this.selection!.id)
+
+          break
+        }
+        case 'subnet': {
+          for (const p of this.peers) {
+            if (p.subnetId === this.selection!.id) {
+              p.subnetId = null
+            }
+          }
+          this.subnets = this.subnets.filter(s => s.id !== this.selection!.id)
+
+          break
+        }
+        case 'link': {
+        // selection.id is pair key
+          const pairKey = this.selection.id
+          function mk (a: string, b: string) {
+            return a < b ? `${a}::${b}` : `${b}::${a}`
+          }
+          this.links = this.links.filter(l => mk(l.fromId, l.toId) !== pairKey)
+
+          break
+        }
+      // No default
+      }
+      this.selection = null
     },
 
-    assignToSubnet(peerId: string, subnetId: string | null) {
-      const n = this.peers.find((p) => p.id === peerId);
-      if (!n) return;
-      const s = this.subnets.find((s) => s.id === subnetId!);
-      n.subnetId = subnetId || null;
+    assignToSubnet (peerId: string, subnetId: string | null) {
+      const n = this.peers.find(p => p.id === peerId)
+      if (!n) {
+        return
+      }
+      const s = this.subnets.find(s => s.id === subnetId!)
+      n.subnetId = subnetId || null
       if (s) {
-        const margin = 40;
-        const left = s.x - s.width / 2 + margin;
-        const right = s.x + s.width / 2 - margin;
-        const top = s.y - s.height / 2 + margin;
-        const bottom = s.y + s.height / 2 - margin;
-        n.x = left + Math.random() * (right - left);
-        n.y = top + Math.random() * (bottom - top);
+        const margin = 40
+        const left = s.x - s.width / 2 + margin
+        const right = s.x + s.width / 2 - margin
+        const top = s.y - s.height / 2 + margin
+        const bottom = s.y + s.height / 2 - margin
+        n.x = left + Math.random() * (right - left)
+        n.y = top + Math.random() * (bottom - top)
       }
     },
 
     // Build a deterministic signature of current topology (structure + coordinates + colors)
-    computeSignature(): string {
-      function sortArr<T>(arr: T[], keyFns: ((v: T) => string)[]): T[] {
+    computeSignature (): string {
+      function sortArr<T> (arr: T[], keyFns: ((v: T) => string)[]): T[] {
         return [...arr].sort((a, b) => {
           for (const kf of keyFns) {
             const ka = kf(a),
-              kb = kf(b);
-            if (ka < kb) return -1;
-            if (ka > kb) return 1;
+              kb = kf(b)
+            if (ka < kb) {
+              return -1
+            }
+            if (ka > kb) {
+              return 1
+            }
           }
-          return 0;
-        });
+          return 0
+        })
       }
       const subnets = sortArr(
-        this.subnets.map((s) => ({
+        this.subnets.map(s => ({
           id: s.id,
           name: s.name,
           cidr: s.cidr,
@@ -190,118 +215,127 @@ export const useNetworkStore = defineStore("network", {
           h: s.height,
           rgba: (s as any).rgba,
         })),
-        [(v) => v.id],
-      );
+        [v => v.id],
+      )
       const peers = sortArr(
-        this.peers.map((p) => ({
+        this.peers.map(p => ({
           id: p.id,
           name: p.name,
           ip: p.ip,
-          subnetId: p.subnetId || "",
+          subnetId: p.subnetId || '',
           x: p.x,
           y: p.y,
-          publicKey: (p as any).publicKey || "",
-          presharedKey: (p as any).presharedKey || "",
+          publicKey: (p as any).publicKey || '',
+          presharedKey: (p as any).presharedKey || '',
           services: Object.keys(p.services || {})
             .sort()
-            .map((n) => {
-              const sv: any = (p.services as any)[n];
+            .map(n => {
+              const sv: any = (p.services as any)[n]
               return {
                 n,
                 port: sv?.port,
                 dept: sv?.department,
                 desc: sv?.description,
-              };
+              }
             }),
         })),
-        [(v) => v.id],
-      );
+        [v => v.id],
+      )
       const links = sortArr(
-        this.links.map((l) => ({
+        this.links.map(l => ({
           k: l.kind,
           f: l.fromId,
           t: l.toId,
-          s: (l as any).serviceName || "",
+          s: (l as any).serviceName || '',
         })),
-        [(v) => v.k, (v) => v.f, (v) => v.t, (v) => v.s],
-      );
-      return JSON.stringify({ subnets, peers, links });
+        [v => v.k, v => v.f, v => v.t, v => v.s],
+      )
+      return JSON.stringify({ subnets, peers, links })
     },
 
     // Capture current topology as clean baseline (called after backend sync)
-    updateBaselineSignature() {
-      this.baselineSignature = this.computeSignature();
+    updateBaselineSignature () {
+      this.baselineSignature = this.computeSignature()
     },
 
-    applyBackendTopology(payload: {
+    applyBackendTopology (payload: {
       subnets: Array<{
-        id: string;
-        name: string;
-        cidr: string;
-        description?: string;
-        x?: number;
-        y?: number;
-        width?: number;
-        height?: number;
-        rgba?: number;
-      }>;
+        id: string
+        name: string
+        cidr: string
+        description?: string
+        x?: number
+        y?: number
+        width?: number
+        height?: number
+        rgba?: number
+      }>
       peers: Array<{
-        id: string;
-        name: string;
-        ip: string;
-        subnetId: string | null;
-        x?: number;
-        y?: number;
-        services?: Record<string, ServiceInfo>;
-        host?: boolean;
-        presharedKey?: string;
-        publicKey?: string;
-        rx: number;
-        tx: number;
-        lastHandshake: number;
-      }>;
-      links: Link[];
+        id: string
+        name: string
+        ip: string
+        subnetId: string | null
+        x?: number
+        y?: number
+        services?: Record<string, ServiceInfo>
+        host?: boolean
+        presharedKey?: string
+        publicKey?: string
+        rx: number
+        tx: number
+        lastHandshake: number
+      }>
+      links: Link[]
     }) {
-      const oldSelection = this.selection;
+      const oldSelection = this.selection
 
       // --- Subnets ---
-      const incomingSubnetIds = new Set(payload.subnets.map((s) => s.id));
+      const incomingSubnetIds = new Set(payload.subnets.map(s => s.id))
       // Update or remove
-      this.subnets = this.subnets.filter((existing) => {
-        if (!incomingSubnetIds.has(existing.id)) return false; // remove missing
-        const incoming = payload.subnets.find((s) => s.id === existing.id)!;
-        if (existing.name !== incoming.name) existing.name = incoming.name;
-        if (existing.cidr !== incoming.cidr) existing.cidr = incoming.cidr;
+      this.subnets = this.subnets.filter(existing => {
+        if (!incomingSubnetIds.has(existing.id)) {
+          return false
+        } // remove missing
+        const incoming = payload.subnets.find(s => s.id === existing.id)!
+        if (existing.name !== incoming.name) {
+          existing.name = incoming.name
+        }
+        if (existing.cidr !== incoming.cidr) {
+          existing.cidr = incoming.cidr
+        }
         if (
-          incoming.description !== undefined &&
-          existing.description !== incoming.description
-        )
-          existing.description = incoming.description;
+          incoming.description !== undefined
+          && existing.description !== incoming.description
+        ) {
+          existing.description = incoming.description
+        }
         // Intentionally do NOT overwrite existing.rgba so in-progress user color edits aren't reset by polling.
         // (Treat color like x,y,width,height: only set on initial add below.)
-        return true;
-      });
+        return true
+      })
       // Add new
-      const existingSubnets = this.subnets;
+      const existingSubnets = this.subnets
       for (const inc of payload.subnets) {
-        if (!existingSubnets.find((s) => s.id === inc.id)) {
+        if (!existingSubnets.find(s => s.id === inc.id)) {
           // Use backend provided coordinates if present; else layout heuristic
-          let width = inc.width ?? 420;
-          let height = inc.height ?? 260;
-          let x = inc.x ?? 520;
-          let y = inc.y ?? 300;
+          const width = inc.width ?? 420
+          const height = inc.height ?? 260
+          let x = inc.x ?? 520
+          let y = inc.y ?? 300
           if (
-            (inc.x === undefined || inc.y === undefined) &&
-            existingSubnets.length
+            (inc.x === undefined || inc.y === undefined)
+            && existingSubnets.length > 0
           ) {
             const rightMost = existingSubnets.reduce((a, b) =>
               a.x + a.width / 2 > b.x + b.width / 2 ? a : b,
-            );
-            x = rightMost.x + rightMost.width / 2 + width / 2 + 120;
-            y = rightMost.y;
+            )
+            x = rightMost.x + rightMost.width / 2 + width / 2 + 120
+            y = rightMost.y
           }
-          let rgba = inc.rgba;
-          if (rgba != null) rgba = (Number(rgba) >>> 0) & 0xffffffff;
+          let rgba = inc.rgba
+          if (rgba != null) {
+            rgba = (Number(rgba) >>> 0) & 0xff_ff_ff_ff
+          }
           this.subnets.push({
             id: inc.id,
             name: inc.name,
@@ -312,50 +346,55 @@ export const useNetworkStore = defineStore("network", {
             width,
             height,
             rgba,
-          });
+          })
           // Snap existing peers without a subnet but whose IP falls inside this new subnet's CIDR
           try {
-            const net = inc.cidr;
-            const [netBase, netBitsStr] = net.split("/");
-            const netBits = parseInt(netBitsStr || "32", 10);
-            const baseParts = netBase.split(".").map((n) => parseInt(n, 10));
+            const net = inc.cidr
+            const [netBase, netBitsStr] = net.split('/')
+            const netBits = Number.parseInt(netBitsStr || '32', 10)
+            const baseParts = netBase.split('.').map(n => Number.parseInt(n, 10))
             if (
-              baseParts.length === 4 &&
-              baseParts.every((n) => !isNaN(n) && n >= 0 && n < 256) &&
-              netBits >= 0 &&
-              netBits <= 32
+              baseParts.length === 4
+              && baseParts.every(n => !isNaN(n) && n >= 0 && n < 256)
+              && netBits >= 0
+              && netBits <= 32
             ) {
-              const mask = netBits === 0 ? 0 : (~0 << (32 - netBits)) >>> 0;
-              const baseInt =
-                ((baseParts[0] << 24) |
-                  (baseParts[1] << 16) |
-                  (baseParts[2] << 8) |
-                  baseParts[3]) >>>
-                0;
-              const networkInt = baseInt & mask;
-              function ipToInt(ip: string) {
-                const p = ip.split(".").map((q) => parseInt(q, 10));
+              const mask = netBits === 0 ? 0 : (~0 << (32 - netBits)) >>> 0
+              const baseInt
+                = ((baseParts[0] << 24)
+                  | (baseParts[1] << 16)
+                  | (baseParts[2] << 8)
+                  | baseParts[3])
+                >>> 0
+              const networkInt = baseInt & mask
+              function ipToInt (ip: string) {
+                const p = ip.split('.').map(q => Number.parseInt(q, 10))
                 if (
-                  p.length !== 4 ||
-                  p.some((x) => isNaN(x) || x < 0 || x > 255)
-                )
-                  return null;
-                return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
+                  p.length !== 4
+                  || p.some(x => isNaN(x) || x < 0 || x > 255)
+                ) {
+                  return null
+                }
+                return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0
               }
               for (const peer of this.peers) {
-                if (peer.subnetId) continue;
-                const ipInt = ipToInt(peer.ip || "");
-                if (ipInt == null) continue;
+                if (peer.subnetId) {
+                  continue
+                }
+                const ipInt = ipToInt(peer.ip || '')
+                if (ipInt == null) {
+                  continue
+                }
                 if ((ipInt & mask) === networkInt) {
                   // Determine spot within subnet rectangle (with margin)
-                  const margin = 60;
-                  const left = x - width / 2 + margin;
-                  const right = x + width / 2 - margin;
-                  const top = y - height / 2 + margin;
-                  const bottom = y + height / 2 - margin;
-                  peer.subnetId = inc.id;
-                  peer.x = left + Math.random() * Math.max(1, right - left);
-                  peer.y = top + Math.random() * Math.max(1, bottom - top);
+                  const margin = 60
+                  const left = x - width / 2 + margin
+                  const right = x + width / 2 - margin
+                  const top = y - height / 2 + margin
+                  const bottom = y + height / 2 - margin
+                  peer.subnetId = inc.id
+                  peer.x = left + Math.random() * Math.max(1, right - left)
+                  peer.y = top + Math.random() * Math.max(1, bottom - top)
                 }
               }
             }
@@ -368,117 +407,132 @@ export const useNetworkStore = defineStore("network", {
       // --- Peers ---
       // Allowed rule: a peer is connected ONLY if it has a membership link to the subnet it is contained in.
       // Here 'contained in' comes from backendInteraction fetchTopology assigning subnetId via topology.network.
-      const peerAllowed: Record<string, boolean> = {};
-      const incomingPeerIds = new Set(payload.peers.map((p) => p.id));
+      const peerAllowed: Record<string, boolean> = {}
+      const incomingPeerIds = new Set(payload.peers.map(p => p.id))
       // Build quick lookup: peerId -> set of subnetIds where membership link exists
-      const peerMemberships: Record<string, Set<string>> = {};
+      const peerMemberships: Record<string, Set<string>> = {}
       for (const l of payload.links) {
-        if ((l as any).kind === "membership") {
-          const pid = (l as any).fromId;
-          const sid = (l as any).toId;
-          if (!peerMemberships[pid]) peerMemberships[pid] = new Set<string>();
-          peerMemberships[pid].add(sid);
+        if ((l as any).kind === 'membership') {
+          const pid = (l as any).fromId
+          const sid = (l as any).toId
+          if (!peerMemberships[pid]) {
+            peerMemberships[pid] = new Set<string>()
+          }
+          peerMemberships[pid].add(sid)
         }
       }
       // (incomingPeerIds defined above)
       // Update or remove peers
-      this.peers = this.peers.filter((existing) => {
-        if (!incomingPeerIds.has(existing.id)) return false;
-        const incoming = payload.peers.find((p) => p.id === existing.id)!;
-        if (existing.name !== incoming.name) existing.name = incoming.name;
-        if (existing.ip !== incoming.ip) existing.ip = incoming.ip;
+      this.peers = this.peers.filter(existing => {
+        if (!incomingPeerIds.has(existing.id)) {
+          return false
+        }
+        const incoming = payload.peers.find(p => p.id === existing.id)!
+        if (existing.name !== incoming.name) {
+          existing.name = incoming.name
+        }
+        if (existing.ip !== incoming.ip) {
+          existing.ip = incoming.ip
+        }
         if (existing.subnetId !== incoming.subnetId) {
-          const prev = existing.subnetId;
-          existing.subnetId = incoming.subnetId;
+          const prev = existing.subnetId
+          existing.subnetId = incoming.subnetId
           // If peer just gained a subnet (prev null) or is outside new subnet bounds, snap it inside.
           if (incoming.subnetId) {
-            const s = this.subnets.find((s) => s.id === incoming.subnetId);
+            const s = this.subnets.find(s => s.id === incoming.subnetId)
             if (s) {
-              const margin = 60;
-              const left = s.x - s.width / 2 + margin;
-              const right = s.x + s.width / 2 - margin;
-              const top = s.y - s.height / 2 + margin;
-              const bottom = s.y + s.height / 2 - margin;
+              const margin = 60
+              const left = s.x - s.width / 2 + margin
+              const right = s.x + s.width / 2 - margin
+              const top = s.y - s.height / 2 + margin
+              const bottom = s.y + s.height / 2 - margin
               const outOfBounds = !(
-                existing.x >= left &&
-                existing.x <= right &&
-                existing.y >= top &&
-                existing.y <= bottom
-              );
+                existing.x >= left
+                && existing.x <= right
+                && existing.y >= top
+                && existing.y <= bottom
+              )
               if (!prev || outOfBounds) {
-                existing.x = left + Math.random() * Math.max(1, right - left);
-                existing.y = top + Math.random() * Math.max(1, bottom - top);
+                existing.x = left + Math.random() * Math.max(1, right - left)
+                existing.y = top + Math.random() * Math.max(1, bottom - top)
               }
             }
           }
         }
-        existing.services = incoming.services || {};
+        existing.services = incoming.services || {}
         // Derive host only from services map (at least one service with numeric port)
         existing.host = Object.values(existing.services || {}).some(
-          (s: any) => s && typeof s.port === "number" && !isNaN(s.port),
-        );
-        if (
-          incoming.presharedKey &&
-          existing.presharedKey !== incoming.presharedKey
+          (s: any) => s && typeof s.port === 'number' && !isNaN(s.port),
         )
-          existing.presharedKey = incoming.presharedKey;
-        if (incoming.publicKey && existing.publicKey !== incoming.publicKey)
-          existing.publicKey = incoming.publicKey;
+        if (
+          incoming.presharedKey
+          && existing.presharedKey !== incoming.presharedKey
+        ) {
+          existing.presharedKey = incoming.presharedKey
+        }
+        if (incoming.publicKey && existing.publicKey !== incoming.publicKey) {
+          existing.publicKey = incoming.publicKey
+        }
         // Connected if there is a membership link specifically to its own subnetId
         existing.public = !!(
-          existing.subnetId &&
-          peerMemberships[existing.id]?.has(existing.subnetId)
-        );
+          existing.subnetId
+          && peerMemberships[existing.id]?.has(existing.subnetId)
+        )
         // Live stats: update rx/tx/lastHandshake on every refresh
-        const rx =
-          typeof incoming.rx === "number" && !isNaN(incoming.rx)
+        const rx
+          = typeof incoming.rx === 'number' && !isNaN(incoming.rx)
             ? incoming.rx
-            : 0;
-        const tx =
-          typeof incoming.tx === "number" && !isNaN(incoming.tx)
+            : 0
+        const tx
+          = typeof incoming.tx === 'number' && !isNaN(incoming.tx)
             ? incoming.tx
-            : 0;
-        const lastHandshake =
-          typeof incoming.lastHandshake === "number" &&
-          !isNaN(incoming.lastHandshake)
+            : 0
+        const lastHandshake
+          = typeof incoming.lastHandshake === 'number'
+            && !isNaN(incoming.lastHandshake)
             ? incoming.lastHandshake
-            : 0;
-        if (existing.rx !== rx) existing.rx = rx;
-        if (existing.tx !== tx) existing.tx = tx;
-        if (existing.lastHandshake !== lastHandshake)
-          existing.lastHandshake = lastHandshake;
-        return true;
-      });
+            : 0
+        if (existing.rx !== rx) {
+          existing.rx = rx
+        }
+        if (existing.tx !== tx) {
+          existing.tx = tx
+        }
+        if (existing.lastHandshake !== lastHandshake) {
+          existing.lastHandshake = lastHandshake
+        }
+        return true
+      })
       for (const inc of payload.peers) {
-        if (!this.peers.find((p) => p.id === inc.id)) {
+        if (!this.peers.find(p => p.id === inc.id)) {
           // Use backend coordinates if provided, else derive
-          let x = inc.x ?? 300 + Math.random() * 200;
-          let y = inc.y ?? 300 + Math.random() * 200;
+          let x = inc.x ?? 300 + Math.random() * 200
+          let y = inc.y ?? 300 + Math.random() * 200
           if ((inc.x === undefined || inc.y === undefined) && inc.subnetId) {
-            const s = this.subnets.find((s) => s.id === inc.subnetId);
+            const s = this.subnets.find(s => s.id === inc.subnetId)
             if (s) {
-              const margin = 60;
-              const left = s.x - s.width / 2 + margin;
-              const top = s.y - s.height / 2 + margin;
-              const right = s.x + s.width / 2 - margin;
-              const bottom = s.y + s.height / 2 - margin;
-              x = left + Math.random() * (right - left);
-              y = top + Math.random() * (bottom - top);
+              const margin = 60
+              const left = s.x - s.width / 2 + margin
+              const top = s.y - s.height / 2 + margin
+              const right = s.x + s.width / 2 - margin
+              const bottom = s.y + s.height / 2 - margin
+              x = left + Math.random() * (right - left)
+              y = top + Math.random() * (bottom - top)
             }
           }
-          const services = inc.services || {};
+          const services = inc.services || {}
           const host = Object.values(services).some(
-            (s: any) => s && typeof s.port === "number" && !isNaN(s.port),
-          );
+            (s: any) => s && typeof s.port === 'number' && !isNaN(s.port),
+          )
           const peer_public = !!(
             inc.subnetId && peerMemberships[inc.id]?.has(inc.subnetId)
-          );
-          const rx = typeof inc.rx === "number" && !isNaN(inc.rx) ? inc.rx : 0;
-          const tx = typeof inc.tx === "number" && !isNaN(inc.tx) ? inc.tx : 0;
-          const lastHandshake =
-            typeof inc.lastHandshake === "number" && !isNaN(inc.lastHandshake)
+          )
+          const rx = typeof inc.rx === 'number' && !isNaN(inc.rx) ? inc.rx : 0
+          const tx = typeof inc.tx === 'number' && !isNaN(inc.tx) ? inc.tx : 0
+          const lastHandshake
+            = typeof inc.lastHandshake === 'number' && !isNaN(inc.lastHandshake)
               ? inc.lastHandshake
-              : 0;
+              : 0
           this.peers.push({
             id: inc.id,
             name: inc.name,
@@ -494,46 +548,48 @@ export const useNetworkStore = defineStore("network", {
             rx,
             tx,
             lastHandshake,
-          });
+          })
         }
       }
 
       // --- Links --- (replace wholesale; link ids deterministic so selection can persist)
-      this.links = payload.links;
+      this.links = payload.links
 
       if (oldSelection) {
-        if (oldSelection.type === "link") {
-          function pairKey(a: string, b: string) {
-            return a < b ? `${a}::${b}` : `${b}::${a}`;
+        if (oldSelection.type === 'link') {
+          function pairKey (a: string, b: string) {
+            return a < b ? `${a}::${b}` : `${b}::${a}`
           }
-          let key = oldSelection.id;
+          let key = oldSelection.id
           // Legacy case: selection stored a single link id; translate to pairKey if match.
-          const match = this.links.find((l) => l.id === key);
-          if (match) key = pairKey(match.fromId, match.toId);
+          const match = this.links.find(l => l.id === key)
+          if (match) {
+            key = pairKey(match.fromId, match.toId)
+          }
           const exists = this.links.some(
-            (l) => pairKey(l.fromId, l.toId) === key,
-          );
+            l => pairKey(l.fromId, l.toId) === key,
+          )
           this.selection = exists
-            ? { ...oldSelection, id: key, name: "Links" }
-            : null;
+            ? { ...oldSelection, id: key, name: 'Links' }
+            : null
         } else {
-          const stillExists =
-            (oldSelection.type === "peer" &&
-              this.peers.some((p) => p.id === oldSelection.id)) ||
-            (oldSelection.type === "subnet" &&
-              this.subnets.some((s) => s.id === oldSelection.id));
-          this.selection = stillExists ? oldSelection : null;
+          const stillExists
+            = (oldSelection.type === 'peer'
+              && this.peers.some(p => p.id === oldSelection.id))
+            || (oldSelection.type === 'subnet'
+              && this.subnets.some(s => s.id === oldSelection.id))
+          this.selection = stillExists ? oldSelection : null
         }
       }
       // Update baseline after successful backend sync
-      this.updateBaselineSignature();
+      this.updateBaselineSignature()
     },
-    sanitizeColors() {
+    sanitizeColors () {
       for (const s of this.subnets) {
         if ((s as any).rgba != null) {
-          (s as any).rgba = (Number((s as any).rgba) >>> 0) & 0xffffffff;
+          (s as any).rgba = (Number((s as any).rgba) >>> 0) & 0xff_ff_ff_ff
         }
       }
     },
   },
-});
+})

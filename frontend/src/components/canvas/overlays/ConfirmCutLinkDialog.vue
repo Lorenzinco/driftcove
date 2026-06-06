@@ -2,19 +2,19 @@
   <v-dialog v-model="internal" max-width="520">
     <v-card>
       <v-card-title class="d-flex align-center">
-        <v-icon icon="mdi-content-cut" class="me-2" color="error" />
+        <v-icon class="me-2" color="error" icon="mdi-content-cut" />
         <span>Confirm Cut</span>
         <v-spacer />
-        <v-btn icon="mdi-close" variant="text" @click="close" :disabled="loading" />
+        <v-btn :disabled="loading" icon="mdi-close" variant="text" @click="close" />
       </v-card-title>
       <v-divider />
       <v-card-text class="text-body-2">
         <div v-if="link" class="mb-4 d-flex align-center ga-2 flex-wrap">
           <template v-if="mode==='p2p'">
-            <v-icon icon="mdi-account" size="20" class="text-success" />
-            <v-icon icon="mdi-arrow-left-right" size="18" class="text-success" />
-            <v-icon icon="mdi-account" size="20" class="text-success" />
-            <v-icon v-if="problematic" icon="mdi-alert-circle" color="warning" size="20" />
+            <v-icon class="text-success" icon="mdi-account" size="20" />
+            <v-icon class="text-success" icon="mdi-arrow-left-right" size="18" />
+            <v-icon class="text-success" icon="mdi-account" size="20" />
+            <v-icon v-if="problematic" color="warning" icon="mdi-alert-circle" size="20" />
             <span class="font-weight-medium">{{ peerA }} ↔ {{ peerB }}</span>
           </template>
           <template v-else-if="mode==='admin-p2p'">
@@ -24,27 +24,27 @@
             <span class="font-weight-medium">(admin) {{ peerA }} → {{ peerB }}</span>
           </template>
           <template v-else-if="mode==='membership'">
-            <v-icon icon="mdi-account" size="20" class="text-secondary" />
-            <v-icon icon="mdi-arrow-left-right" size="18" class="text-secondary" />
-            <v-icon icon="mdi-lan" size="20" class="text-secondary" />
+            <v-icon class="text-secondary" icon="mdi-account" size="20" />
+            <v-icon class="text-secondary" icon="mdi-arrow-left-right" size="18" />
+            <v-icon class="text-secondary" icon="mdi-lan" size="20" />
             <span class="font-weight-medium">{{ peerA }} ↔ {{ peerB }}</span>
           </template>
           <template v-else-if="mode==='service-host'">
             <span class="font-weight-medium">{{ peerB }}</span>
-            <v-icon icon="mdi-arrow-right" size="16" class="text-primary" />
-            <v-icon icon="mdi-server" size="18" class="text-primary" />
+            <v-icon class="text-primary" icon="mdi-arrow-right" size="16" />
+            <v-icon class="text-primary" icon="mdi-server" size="18" />
             <span class="font-weight-medium">{{ serviceName }}</span>
           </template>
           <template v-else-if="mode==='service-consumer'">
             <span class="font-weight-medium">This peer</span>
-            <v-icon icon="mdi-arrow-right" size="16" class="text-primary" />
-            <v-icon icon="mdi-server" size="18" class="text-primary" />
+            <v-icon class="text-primary" icon="mdi-arrow-right" size="16" />
+            <v-icon class="text-primary" icon="mdi-server" size="18" />
             <span class="font-weight-medium">{{ peerA }} / {{ serviceName }}</span>
           </template>
           <template v-else-if="mode==='subnet-subnet'">
-            <v-icon icon="mdi-lan" size="18" class="text-success" />
-            <v-icon icon="mdi-arrow-left-right" size="16" class="text-success" />
-            <v-icon icon="mdi-lan" size="18" class="text-success" />
+            <v-icon class="text-success" icon="mdi-lan" size="18" />
+            <v-icon class="text-success" icon="mdi-arrow-left-right" size="16" />
+            <v-icon class="text-success" icon="mdi-lan" size="18" />
             <span class="font-weight-medium">{{ peerA }} ↔ {{ peerB }}</span>
           </template>
           <template v-else-if="mode==='admin-subnet-subnet'">
@@ -60,31 +60,37 @@
             <span class="font-weight-medium">{{ peerA }} → {{ peerB }}</span>
           </template>
           <template v-else-if="mode==='subnet-service'">
-            <v-icon icon="mdi-server" size="18" class="text-primary" />
-            <v-icon icon="mdi-arrow-right" size="16" class="text-primary" />
-            <v-icon icon="mdi-lan" size="18" class="text-primary" />
+            <v-icon class="text-primary" icon="mdi-server" size="18" />
+            <v-icon class="text-primary" icon="mdi-arrow-right" size="16" />
+            <v-icon class="text-primary" icon="mdi-lan" size="18" />
             <span class="font-weight-medium">{{ serviceName }} → {{ peerB }}</span>
           </template>
           <template v-else><!-- generic service -->
-            <v-icon icon="mdi-server" size="18" class="text-primary" />
-            <v-icon icon="mdi-arrow-right" size="16" class="text-primary" />
-            <v-icon icon="mdi-account" size="18" class="text-primary" />
+            <v-icon class="text-primary" icon="mdi-server" size="18" />
+            <v-icon class="text-primary" icon="mdi-arrow-right" size="16" />
+            <v-icon class="text-primary" icon="mdi-account" size="18" />
             <span class="font-weight-medium">{{ peerA }} -> {{ peerB }} ({{ serviceName }})</span>
           </template>
         </div>
-  <p v-if="mode==='p2p'">Are you sure you want to remove this peer-to-peer link? Unrestricted traffic between these peers will stop.</p>
-  <p v-else-if="mode==='admin-p2p'">Remove this directed admin link? '{{ peerA }}' loses unrestricted initiation to '{{ peerB }}'.</p>
-  <p v-else-if="mode==='membership'">Are you sure you want to remove this membership link? '{{ peerB }}' members will lose unrestrained initiation with '{{ peerA }}'.</p>
-  <p v-else-if="mode==='subnet-subnet'">Are you sure you want to remove this subnet-to-subnet link? Traffic between these subnets will be blocked.</p>
-  <p v-else-if="mode==='admin-subnet-subnet'">Remove this admin subnet directed link? '{{ peerA }}' members will lose unrestricted initiation to the target subnet.</p>
-  <p v-else-if="mode==='admin-peer-subnet'">Remove this admin peer → subnet link? '{{ peerA }}' loses unrestricted initiation to '{{ peerB }}' members.</p>
-  <p v-else-if="mode==='subnet-service'">Are you sure you want to remove this service-to-subnet link? Peers in the subnet will lose access to the service.</p>
-  <p v-else>Are you sure you want to disconnect this service link? Access to the service will be revoked.</p>
-        <v-alert v-if="mode==='p2p' && problematic" type="warning" density="compact" class="mt-2" text="This p2p link is problematic because a service link also exists between a host and this peer." />
+        <p v-if="mode==='p2p'">Are you sure you want to remove this peer-to-peer link? Unrestricted traffic between these peers will stop.</p>
+        <p v-else-if="mode==='admin-p2p'">Remove this directed admin link? '{{ peerA }}' loses unrestricted initiation to '{{ peerB }}'.</p>
+        <p v-else-if="mode==='membership'">Are you sure you want to remove this membership link? '{{ peerB }}' members will lose unrestrained initiation with '{{ peerA }}'.</p>
+        <p v-else-if="mode==='subnet-subnet'">Are you sure you want to remove this subnet-to-subnet link? Traffic between these subnets will be blocked.</p>
+        <p v-else-if="mode==='admin-subnet-subnet'">Remove this admin subnet directed link? '{{ peerA }}' members will lose unrestricted initiation to the target subnet.</p>
+        <p v-else-if="mode==='admin-peer-subnet'">Remove this admin peer → subnet link? '{{ peerA }}' loses unrestricted initiation to '{{ peerB }}' members.</p>
+        <p v-else-if="mode==='subnet-service'">Are you sure you want to remove this service-to-subnet link? Peers in the subnet will lose access to the service.</p>
+        <p v-else>Are you sure you want to disconnect this service link? Access to the service will be revoked.</p>
+        <v-alert
+          v-if="mode==='p2p' && problematic"
+          class="mt-2"
+          density="compact"
+          text="This p2p link is problematic because a service link also exists between a host and this peer."
+          type="warning"
+        />
       </v-card-text>
       <v-divider />
       <v-card-actions class="justify-end ga-2">
-        <v-btn variant="text" @click="close" :disabled="loading">Cancel</v-btn>
+        <v-btn :disabled="loading" variant="text" @click="close">Cancel</v-btn>
         <v-btn color="error" :loading="loading" @click="emitConfirm">Cut Link</v-btn>
       </v-card-actions>
     </v-card>

@@ -173,4 +173,11 @@ echo "[init] tcpdump running on $WG_IF -> $CAP_DIR (size-rotating, gzip)."
 
 
 echo "[init] WireGuard up. Starting backend on ${BACKEND_PORT}…"
-exec uvicorn backend.main:app --host 0.0.0.0 --port "${BACKEND_PORT}"
+
+UVICORN_ARGS=""
+if [ "${WG_BACKEND_RELOAD:-false}" = "true" ]; then
+  echo "[init] Hot reload enabled for backend source changes."
+  UVICORN_ARGS="--reload --reload-dir /home/backend"
+fi
+
+exec uvicorn backend.main:app --host 0.0.0.0 --port "${BACKEND_PORT}" $UVICORN_ARGS

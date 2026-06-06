@@ -1,12 +1,12 @@
 <template>
   <v-dialog v-model="model" max-width="520">
     <v-card>
-      <v-card-title class="text-h6"><v-icon icon="mdi-delete" class="text-error"></v-icon>Delete Subnet</v-card-title>
+      <v-card-title class="text-h6"><v-icon class="text-error" icon="mdi-delete" />Delete Subnet</v-card-title>
       <v-card-text>
         <div v-if="step===1">
           <p>Choose what to delete for <strong>{{ subnetName }}</strong>:</p>
           <v-radio-group v-model="withPeers" hide-details>
-            <v-radio :value="false" label="Delete subnet only">
+            <v-radio label="Delete subnet only" :value="false">
               <template #label>
                 <div>
                   <div class="font-weight-medium">Delete subnet only</div>
@@ -37,11 +37,11 @@
       <v-card-actions>
         <v-spacer />
         <template v-if="step===1">
-          <v-btn variant="text" @click="cancel" :disabled="loading">Cancel</v-btn>
-          <v-btn color="primary" @click="step=2" :disabled="loading">Continue</v-btn>
+          <v-btn :disabled="loading" variant="text" @click="cancel">Cancel</v-btn>
+          <v-btn color="primary" :disabled="loading" @click="step=2">Continue</v-btn>
         </template>
         <template v-else>
-          <v-btn variant="text" @click="step=1" :disabled="loading">Back</v-btn>
+          <v-btn :disabled="loading" variant="text" @click="step=1">Back</v-btn>
           <v-btn :color="withPeers ? 'error' : 'warning'" :loading="loading" @click="confirm">
             {{ withPeers ? 'Delete Subnet + Peers' : 'Delete Subnet' }}
           </v-btn>
@@ -52,18 +52,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+  import { computed, ref, watch } from 'vue'
 
-const props = defineProps<{ modelValue: boolean; subnetName: string; loading?: boolean }>()
-const emit = defineEmits<{ (e:'update:modelValue', v:boolean):void; (e:'confirm', payload:{ withPeers:boolean }):void }>()
+  const props = defineProps<{ modelValue: boolean, subnetName: string, loading?: boolean }>()
+  const emit = defineEmits<{ (e: 'update:modelValue', v: boolean): void, (e: 'confirm', payload: { withPeers: boolean }): void }>()
 
-const model = computed({ get:()=>props.modelValue, set:(v:boolean)=> emit('update:modelValue', v) })
-const step = ref(1)
-const withPeers = ref(false)
-const loading = computed(()=> !!props.loading)
+  const model = computed({ get: () => props.modelValue, set: (v: boolean) => emit('update:modelValue', v) })
+  const step = ref(1)
+  const withPeers = ref(false)
+  const loading = computed(() => !!props.loading)
 
-watch(() => props.modelValue, v => { if (v){ step.value = 1; withPeers.value = false } })
+  watch(() => props.modelValue, v => {
+    if (v) {
+      step.value = 1; withPeers.value = false
+    }
+  })
 
-function cancel(){ model.value = false }
-function confirm(){ emit('confirm', { withPeers: withPeers.value }) }
+  function cancel () {
+    model.value = false
+  }
+  function confirm () {
+    emit('confirm', { withPeers: withPeers.value })
+  }
 </script>

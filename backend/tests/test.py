@@ -108,7 +108,7 @@ def test_get_subnets():
 
 def test_status():
     print("\033[94mGetting wg status...\033[0m")
-    r = requests.get(f"{BASE_URL}/status", headers=HEADERS)
+    r = requests.get(f"{BASE_URL}/network/status", headers=HEADERS)
     print(r.status_code, r.text)
     if r.status_code == 200:
         print("\033[92mStatus check successful\033[0m")
@@ -200,14 +200,10 @@ def test_get_all_peers():
 
 
 if __name__ == "__main__":
-    # test_create_peer("peer1")
-    # test_create_peer("peer2")
-    test_add_link_between_peers("Test", "master")
-    # exit(0)
-
-    # test_get_subnets()
-    #test_get_topology()
-    #test_create_service()
+    assert(test_status() is True)
+    assert(test_get_subnets() is True)
+    assert(test_get_all_peers() is True)
+    print("\033[92mBackend smoke tests passed successfully!\033[0m")
     exit(0)
 
     assert(test_create_peer() is True)

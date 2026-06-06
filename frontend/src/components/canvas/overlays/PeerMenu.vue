@@ -6,27 +6,27 @@
       :style="{ left: x + 'px', top: y + 'px', transform: 'translateY(4px)' }"
       @mousedown.stop
     >
-      <v-card elevation="8" density="comfortable" class="pa-1 peer-card" rounded="lg">
-        <v-list density="compact" nav class="py-1" style="min-width:230px;">
+      <v-card class="pa-1 peer-card" density="comfortable" elevation="8" rounded="lg">
+        <v-list class="py-1" density="compact" nav style="min-width:230px;">
           <v-list-subheader class="text-overline opacity-70">Peer Actions</v-list-subheader>
           <v-list-item
-            value="info"
             prepend-icon="mdi-information-outline"
             title="Open Peer Info"
+            value="info"
             @click="$emit('info')"
           />
           <v-list-item
-            value="connect"
             prepend-icon="mdi-connection"
             title="Connect this peer"
+            value="connect"
             @click="$emit('connect')"
           />
           <v-divider class="my-1" />
           <v-list-item
-            value="delete"
+            class="text-error"
             prepend-icon="mdi-delete-outline"
             title="Delete Peer"
-            class="text-error"
+            value="delete"
             @click="$emit('delete')"
           />
         </v-list>
@@ -36,8 +36,8 @@
 </template>
 
 <script setup lang="ts">
-withDefaults(defineProps<{ open: boolean; x: number; y: number }>(), { x: 0, y: 0 });
-defineEmits<{ (e:'info'): void; (e:'connect'): void; (e:'delete'): void }>();
+  withDefaults(defineProps<{ open: boolean, x: number, y: number }>(), { x: 0, y: 0 })
+  defineEmits<{ (e: 'info'): void, (e: 'connect'): void, (e: 'delete'): void }>()
 </script>
 
 <style scoped>

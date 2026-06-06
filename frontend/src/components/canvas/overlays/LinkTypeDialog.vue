@@ -27,7 +27,7 @@
                   icon="mdi-arrow-left-right"
                   size="18"
                 />
-                <v-icon size="18" icon="mdi-account" class="ms-1 text-green" />
+                <v-icon class="ms-1 text-green" icon="mdi-account" size="18" />
                 <span class="ms-2">Peer to Peer</span>
               </div>
             </template>
@@ -36,19 +36,19 @@
             <template #label>
               <div class="d-flex align-center">
                 <v-icon
-                  size="18"
-                  icon="mdi-shield-account"
                   class="me-1 text-deep-purple-accent-2"
+                  icon="mdi-shield-account"
+                  size="18"
                 />
                 <v-icon
-                  size="18"
-                  icon="mdi-arrow-right"
                   class="mx-1 text-deep-purple-accent-2"
+                  icon="mdi-arrow-right"
+                  size="18"
                 />
                 <v-icon
-                  size="18"
-                  icon="mdi-account"
                   class="ms-1 text-deep-purple-accent-2"
+                  icon="mdi-account"
+                  size="18"
                 />
                 <span class="ms-2">Admin peer → Peer</span>
               </div>
@@ -58,22 +58,22 @@
             <template #label>
               <div class="d-flex align-center">
                 <v-icon
-                  size="18"
-                  icon="mdi-account"
                   class="me-1"
                   :class="toIsHost ? 'text-primary' : 'text-disabled'"
+                  icon="mdi-account"
+                  size="18"
                 />
                 <v-icon
-                  size="18"
-                  icon="mdi-arrow-left-right"
                   class="mx-1"
                   :class="toIsHost ? 'text-primary' : 'text-disabled'"
+                  icon="mdi-arrow-left-right"
+                  size="18"
                 />
                 <v-icon
-                  size="18"
-                  icon="mdi-server"
                   class="ms-1"
                   :class="toIsHost ? 'text-primary' : 'text-disabled'"
+                  icon="mdi-server"
+                  size="18"
                 />
                 <span class="ms-2">{{
                   toIsHost
@@ -94,16 +94,16 @@
           <v-radio value="peer-subnet">
             <template #label>
               <div class="d-flex align-center">
-                <v-icon size="18" icon="mdi-account" class="me-1 text-green" />
+                <v-icon class="me-1 text-green" icon="mdi-account" size="18" />
                 <v-icon
-                  size="18"
-                  icon="mdi-arrow-right"
                   class="mx-1 text-green"
+                  icon="mdi-arrow-right"
+                  size="18"
                 />
                 <v-icon
-                  size="18"
-                  icon="mdi-hexagon-multiple-outline"
                   class="ms-1 text-green"
+                  icon="mdi-hexagon-multiple-outline"
+                  size="18"
                 />
                 <span class="ms-2">Subnet guest (public)</span>
               </div>
@@ -113,19 +113,19 @@
             <template #label>
               <div class="d-flex align-center">
                 <v-icon
-                  size="18"
-                  icon="mdi-shield-account"
                   class="me-1 text-deep-purple-accent-2"
+                  icon="mdi-shield-account"
+                  size="18"
                 />
                 <v-icon
-                  size="18"
-                  icon="mdi-arrow-right"
                   class="mx-1 text-deep-purple-accent-2"
+                  icon="mdi-arrow-right"
+                  size="18"
                 />
                 <v-icon
-                  size="18"
-                  icon="mdi-hexagon-multiple-outline"
                   class="ms-1 text-deep-purple-accent-2"
+                  icon="mdi-hexagon-multiple-outline"
+                  size="18"
                 />
                 <span class="ms-2">Admin peer → Subnet</span>
               </div>
@@ -142,16 +142,16 @@
             <template #label>
               <div class="d-flex align-center">
                 <v-icon
-                  size="18"
-                  icon="mdi-hexagon-multiple-outline"
                   class="me-1 text-green"
+                  icon="mdi-hexagon-multiple-outline"
+                  size="18"
                 />
                 <v-icon
-                  size="18"
-                  icon="mdi-arrow-left-right"
                   class="mx-1 text-green"
+                  icon="mdi-arrow-left-right"
+                  size="18"
                 />
-                <v-icon size="18" icon="mdi-account" class="ms-1 text-green" />
+                <v-icon class="ms-1 text-green" icon="mdi-account" size="18" />
                 <span class="ms-2">Subnet to peer</span>
               </div>
             </template>
@@ -160,22 +160,22 @@
             <template #label>
               <div class="d-flex align-center">
                 <v-icon
-                  size="18"
-                  icon="mdi-hexagon-multiple-outline"
                   class="me-1"
                   :class="toIsHost ? 'text-primary' : 'text-disabled'"
+                  icon="mdi-hexagon-multiple-outline"
+                  size="18"
                 />
                 <v-icon
-                  size="18"
-                  icon="mdi-arrow-left-right"
                   class="mx-1"
                   :class="toIsHost ? 'text-primary' : 'text-disabled'"
+                  icon="mdi-arrow-left-right"
+                  size="18"
                 />
                 <v-icon
-                  size="18"
-                  icon="mdi-server"
                   class="ms-1"
                   :class="toIsHost ? 'text-primary' : 'text-disabled'"
+                  icon="mdi-server"
+                  size="18"
                 />
                 <span class="ms-2">{{
                   toIsHost
@@ -193,28 +193,28 @@
           >
             <v-select
               v-model="selectedService"
-              :items="toServiceItems"
+              density="comfortable"
               item-title="label"
               item-value="value"
+              :items="toServiceItems"
               label="Service"
-              density="comfortable"
               variant="outlined"
             />
           </div>
         </v-expand-transition>
         <div v-if="mode === 'peer-subnet'" class="mt-2">
           <v-alert
-            type="info"
             color="success"
             density="comfortable"
             text="Make this peer public inside the subnet"
+            type="info"
           />
         </div>
         <div v-if="mode === 'subnet-service'" class="mt-2">
           <v-alert
-            type="info"
             density="comfortable"
             text="Make a specific service public inside the subnet"
+            type="info"
           />
         </div>
         <div v-if="mode === 'admin-peer-subnet'" class="mt-2">
@@ -282,10 +282,10 @@
             density="comfortable"
             :text="
               '\'' +
-              fromLabel +
-              '\' and \'' +
-              toLabel +
-              '\' will be able to communicate directly.'
+                fromLabel +
+                '\' and \'' +
+                toLabel +
+                '\' will be able to communicate directly.'
             "
             type="info"
           />
@@ -296,10 +296,10 @@
             density="comfortable"
             :text="
               '\'' +
-              fromLabel +
-              '\' will be able to contact \'' +
-              toLabel +
-              '\', but not vice versa.'
+                fromLabel +
+                '\' will be able to contact \'' +
+                toLabel +
+                '\', but not vice versa.'
             "
             type="info"
           />
@@ -310,10 +310,10 @@
             density="comfortable"
             :text="
               '\'' +
-              fromLabel +
-              '\' will be able to contact \'' +
-              toLabel +
-              '\' on the specified service above, but nothing else.'
+                fromLabel +
+                '\' will be able to contact \'' +
+                toLabel +
+                '\' on the specified service above, but nothing else.'
             "
             type="info"
           />
@@ -350,307 +350,340 @@
   </v-dialog>
 </template>
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
-import { useNetworkStore } from "@/stores/network";
-import { useBackendInteractionStore } from "@/stores/backendInteraction";
+  import { computed, ref, watch } from 'vue'
+  import { useBackendInteractionStore } from '@/stores/backendInteraction'
+  import { useNetworkStore } from '@/stores/network'
 
-const store = useNetworkStore();
-const open = ref(false);
-const fromId = ref("");
-const toId = ref("");
-const fromType = ref<"peer" | "subnet">("peer");
-const toType = ref<"peer" | "subnet">("peer");
-const mode = ref<
-  | "p2p"
-  | "service"
-  | "peer-subnet"
-  | "subnet-subnet"
-  | "subnet-service"
-  | "admin-p2p"
-  | "admin-subnet-subnet"
-  | "admin-peer-subnet"
->("p2p");
-const selectedService = ref<string | null>(null);
-const error = ref<string | null>(null);
+  const store = useNetworkStore()
+  const open = ref(false)
+  const fromId = ref('')
+  const toId = ref('')
+  const fromType = ref<'peer' | 'subnet'>('peer')
+  const toType = ref<'peer' | 'subnet'>('peer')
+  const mode = ref<
+    | 'p2p'
+    | 'service'
+    | 'peer-subnet'
+    | 'subnet-subnet'
+    | 'subnet-service'
+    | 'admin-p2p'
+    | 'admin-subnet-subnet'
+    | 'admin-peer-subnet'
+  >('p2p')
+  const selectedService = ref<string | null>(null)
+  const error = ref<string | null>(null)
 
-const fromPeer = computed(() =>
-  fromType.value === "peer"
-    ? store.peers.find((p) => p.id === fromId.value)
-    : null,
-);
-const toPeer = computed(() =>
-  toType.value === "peer" ? store.peers.find((p) => p.id === toId.value) : null,
-);
-const fromSubnet = computed(() =>
-  fromType.value === "subnet"
-    ? store.subnets.find((s) => s.id === fromId.value)
-    : null,
-);
-const toSubnet = computed(() =>
-  toType.value === "subnet"
-    ? store.subnets.find((s) => s.id === toId.value)
-    : null,
-);
-const fromLabel = computed(() =>
-  fromType.value === "peer"
-    ? fromPeer.value?.name || ""
-    : fromSubnet.value?.name || fromSubnet.value?.cidr || "Subnet",
-);
-const toLabel = computed(() =>
-  toType.value === "peer"
-    ? toPeer.value?.name || ""
-    : toSubnet.value?.name || toSubnet.value?.cidr || "Subnet",
-);
-const toIsHost = computed(
-  () =>
-    toType.value === "peer" &&
-    !!toPeer.value?.host &&
-    Object.keys(toPeer.value?.services || {}).length > 0,
-);
-const toServiceItems = computed(() => {
-  // If destination is a host peer, list its services. If destination is a subnet, we need a service list elsewhere; for now support host peer path
-  return Object.entries(toPeer.value?.services || {}).map(
-    ([name, svc]: any) => ({
-      label: `${name}${svc.port ? " (:" + svc.port + ")" : ""}`,
-      value: name,
-    }),
-  );
-});
-const serviceItems = computed(() =>
-  Object.entries(toPeer.value?.services || {}).map(([name, svc]: any) => ({
-    label: `${name}${svc.port ? " (:" + svc.port + ")" : ""}`,
-    value: name,
-  })),
-);
-
-const backend = useBackendInteractionStore();
-const submitting = ref(false);
-const canSubmit = computed(() => {
-  if (submitting.value) return false;
-  switch (mode.value) {
-    case "peer-subnet":
-      // Allow either orientation: peer -> subnet OR subnet -> peer (treated identically)
-      if (fromType.value === "peer" && toType.value === "subnet")
-        return !!fromPeer.value && !!toSubnet.value;
-      if (fromType.value === "subnet" && toType.value === "peer")
-        return !!toPeer.value && !!fromSubnet.value;
-      return false;
-    case "admin-peer-subnet":
-      // Only valid in peer -> subnet orientation
-      return (
-        fromType.value === "peer" &&
-        toType.value === "subnet" &&
-        !!fromPeer.value &&
-        !!toSubnet.value
-      );
-    case "subnet-subnet":
-    case "admin-subnet-subnet":
-      return !!fromSubnet.value && !!toSubnet.value;
-    case "subnet-service":
-      return (
-        !!fromSubnet.value &&
-        !!toPeer.value &&
-        toIsHost.value &&
-        !!selectedService.value
-      );
-    case "service":
-      return !!fromPeer.value && !!toPeer.value && !!selectedService.value;
-    case "p2p":
-    case "admin-p2p":
-      return !!fromPeer.value && !!toPeer.value;
-    default:
-      return false;
-  }
-});
-
-function show(
-  from: string,
-  to: string,
-  options?: { fromType?: "peer" | "subnet"; toType?: "peer" | "subnet" },
-) {
-  fromId.value = from;
-  toId.value = to;
-  error.value = null;
-  selectedService.value = null;
-  fromType.value = options?.fromType || "peer";
-  toType.value = options?.toType || "peer";
-  // Determine mode
-  if (fromType.value === "peer" && toType.value === "peer") mode.value = "p2p";
-  else if (
-    fromType.value === "peer" &&
-    toType.value === "peer" /* service override left via UI */
+  const fromPeer = computed(() =>
+    fromType.value === 'peer'
+      ? store.peers.find(p => p.id === fromId.value)
+      : null,
   )
-    mode.value = "p2p";
-  else if (fromType.value === "peer" && toType.value === "subnet")
-    mode.value = "peer-subnet";
-  else if (fromType.value === "subnet" && toType.value === "peer") {
-    // Treat as peer-subnet by swapping roles for UX: we only allow creating membership from a peer to a subnet
-    mode.value = "peer-subnet";
-  } else if (fromType.value === "subnet" && toType.value === "subnet")
-    mode.value = "subnet-subnet";
-  // For subnet -> peer, user can choose subnet-service via radio if destination hosts services
-  open.value = true;
-}
-function cancel() {
-  open.value = false;
-  store.tool = "select";
-}
-async function submit() {
-  if (!canSubmit.value) return;
-  // Existing check only for p2p/service kinds; membership/service links handled differently
-  if (
-    mode.value === "p2p" ||
-    mode.value === "service" ||
-    mode.value === "admin-p2p"
+  const toPeer = computed(() =>
+    toType.value === 'peer' ? store.peers.find(p => p.id === toId.value) : null,
+  )
+  const fromSubnet = computed(() =>
+    fromType.value === 'subnet'
+      ? store.subnets.find(s => s.id === fromId.value)
+      : null,
+  )
+  const toSubnet = computed(() =>
+    toType.value === 'subnet'
+      ? store.subnets.find(s => s.id === toId.value)
+      : null,
+  )
+  const fromLabel = computed(() =>
+    fromType.value === 'peer'
+      ? fromPeer.value?.name || ''
+      : fromSubnet.value?.name || fromSubnet.value?.cidr || 'Subnet',
+  )
+  const toLabel = computed(() =>
+    toType.value === 'peer'
+      ? toPeer.value?.name || ''
+      : toSubnet.value?.name || toSubnet.value?.cidr || 'Subnet',
+  )
+  const toIsHost = computed(
+    () =>
+      toType.value === 'peer'
+      && !!toPeer.value?.host
+      && Object.keys(toPeer.value?.services || {}).length > 0,
+  )
+  const toServiceItems = computed(() => {
+    // If destination is a host peer, list its services. If destination is a subnet, we need a service list elsewhere; for now support host peer path
+    return Object.entries(toPeer.value?.services || {}).map(
+      ([name, svc]: any) => ({
+        label: `${name}${svc.port ? ' (:' + svc.port + ')' : ''}`,
+        value: name,
+      }),
+    )
+  })
+  const serviceItems = computed(() =>
+    Object.entries(toPeer.value?.services || {}).map(([name, svc]: any) => ({
+      label: `${name}${svc.port ? ' (:' + svc.port + ')' : ''}`,
+      value: name,
+    })),
+  )
+
+  const backend = useBackendInteractionStore()
+  const submitting = ref(false)
+  const canSubmit = computed(() => {
+    if (submitting.value) return false
+    switch (mode.value) {
+      case 'peer-subnet': {
+        // Allow either orientation: peer -> subnet OR subnet -> peer (treated identically)
+        if (fromType.value === 'peer' && toType.value === 'subnet')
+          return !!fromPeer.value && !!toSubnet.value
+        if (fromType.value === 'subnet' && toType.value === 'peer')
+          return !!toPeer.value && !!fromSubnet.value
+        return false
+      }
+      case 'admin-peer-subnet': {
+        // Only valid in peer -> subnet orientation
+        return (
+          fromType.value === 'peer'
+          && toType.value === 'subnet'
+          && !!fromPeer.value
+          && !!toSubnet.value
+        )
+      }
+      case 'subnet-subnet':
+      case 'admin-subnet-subnet': {
+        return !!fromSubnet.value && !!toSubnet.value
+      }
+      case 'subnet-service': {
+        return (
+          !!fromSubnet.value
+          && !!toPeer.value
+          && toIsHost.value
+          && !!selectedService.value
+        )
+      }
+      case 'service': {
+        return !!fromPeer.value && !!toPeer.value && !!selectedService.value
+      }
+      case 'p2p':
+      case 'admin-p2p': {
+        return !!fromPeer.value && !!toPeer.value
+      }
+      default: {
+        return false
+      }
+    }
+  })
+
+  function show (
+    from: string,
+    to: string,
+    options?: { fromType?: 'peer' | 'subnet', toType?: 'peer' | 'subnet' },
   ) {
-    const existing = store.links.find(
-      (l) =>
-        l.fromId === fromId.value &&
-        l.toId === toId.value &&
-        l.kind ===
-          (mode.value === "p2p"
-            ? "p2p"
-            : mode.value === "admin-p2p"
-              ? "admin-p2p"
-              : "service") &&
-        (mode.value === "p2p" ||
-          mode.value === "admin-p2p" ||
-          (l as any).serviceName === selectedService.value),
-    );
-    if (existing) {
-      error.value = "Link already exists";
-      return;
-    }
+    fromId.value = from
+    toId.value = to
+    error.value = null
+    selectedService.value = null
+    fromType.value = options?.fromType || 'peer'
+    toType.value = options?.toType || 'peer'
+    // Determine mode
+    if (fromType.value === 'peer' && toType.value === 'peer') mode.value = 'p2p'
+    else if (
+      fromType.value === 'peer'
+      && toType.value === 'peer' /* service override left via UI */
+    )
+      mode.value = 'p2p'
+    else if (fromType.value === 'peer' && toType.value === 'subnet')
+      mode.value = 'peer-subnet'
+    else if (fromType.value === 'subnet' && toType.value === 'peer') {
+      // Treat as peer-subnet by swapping roles for UX: we only allow creating membership from a peer to a subnet
+      mode.value = 'peer-subnet'
+    } else if (fromType.value === 'subnet' && toType.value === 'subnet')
+      mode.value = 'subnet-subnet'
+    // For subnet -> peer, user can choose subnet-service via radio if destination hosts services
+    open.value = true
   }
-  error.value = null;
-  submitting.value = true;
-  try {
-    if (mode.value === "p2p") {
-      // Derive usernames from peer objects for backend
-      const aUser = fromPeer.value?.name;
-      const bUser = toPeer.value?.name;
-      if (!aUser || !bUser) {
-        error.value = "Missing peer usernames";
-        return;
-      }
-      const ok = await backend.connectPeers(aUser, bUser);
-      if (!ok) {
-        error.value = backend.lastError || "Backend connect failed";
-        return;
-      }
-      // The topology refresh will add the p2p link; no manual push needed
-    } else if (mode.value === "admin-p2p") {
-      const adminUser = fromPeer.value?.name;
-      const peerUser = toPeer.value?.name;
-      if (!adminUser || !peerUser) {
-        error.value = "Missing peer usernames";
-        return;
-      }
-      const ok = await backend.connectAdminPeerToPeer(adminUser, peerUser);
-      if (!ok) {
-        error.value = backend.lastError || "Backend admin link failed";
-        return;
-      }
-    } else if (mode.value === "service") {
-      const aUser = fromPeer.value?.name;
-      const svcName = selectedService.value;
-      if (!aUser || !svcName) {
-        error.value = "Missing peer or service";
-        return;
-      }
-      const ok = await backend.connectPeerToService(aUser, svcName);
-      if (!ok) {
-        error.value = backend.lastError || "Backend service connect failed";
-        return;
-      }
-      // Topology refresh will cause service link(s) to appear via new service grouping.
-    } else if (mode.value === "peer-subnet") {
-      // Support reversed orientation (subnet -> peer) by swapping roles
-      let peerUser: string | undefined;
-      let subnetCidr: string | undefined;
-      if (fromType.value === "peer" && toType.value === "subnet") {
-        peerUser = fromPeer.value?.name;
-        subnetCidr = toSubnet.value?.cidr;
-      } else if (fromType.value === "subnet" && toType.value === "peer") {
-        peerUser = toPeer.value?.name;
-        subnetCidr = fromSubnet.value?.cidr;
-      }
-      if (!peerUser || !subnetCidr) {
-        error.value = "Missing peer or subnet";
-        return;
-      }
-      const ok = await backend.connectPeerToSubnet(peerUser, subnetCidr);
-      if (!ok) {
-        error.value = backend.lastError || "Backend peer-subnet connect failed";
-        return;
-      }
-    } else if (mode.value === "admin-peer-subnet") {
-      const adminUser = fromPeer.value?.name;
-      const subnetCidr = toSubnet.value?.cidr;
-      if (!adminUser || !subnetCidr) {
-        error.value = "Missing peer or subnet";
-        return;
-      }
-      const ok = await backend.connectAdminPeerToSubnet(adminUser, subnetCidr);
-      if (!ok) {
-        error.value =
-          backend.lastError || "Backend admin peer-subnet connect failed";
-        return;
-      }
-    } else if (mode.value === "subnet-subnet") {
-      const aCidr = fromSubnet.value?.cidr;
-      const bCidr = toSubnet.value?.cidr;
-      if (!aCidr || !bCidr) {
-        error.value = "Missing subnets";
-        return;
-      }
-      const ok = await backend.connectSubnetToSubnet(aCidr, bCidr);
-      if (!ok) {
-        error.value =
-          backend.lastError || "Backend subnet-subnet connect failed";
-        return;
-      }
-    } else if (mode.value === "admin-subnet-subnet") {
-      const adminCidr = fromSubnet.value?.cidr;
-      const targetCidr = toSubnet.value?.cidr;
-      if (!adminCidr || !targetCidr) {
-        error.value = "Missing subnets";
-        return;
-      }
-      const ok = await backend.connectAdminSubnetToSubnet(
-        adminCidr,
-        targetCidr,
-      );
-      if (!ok) {
-        error.value = backend.lastError || "Backend admin subnet link failed";
-        return;
-      }
-    } else if (mode.value === "subnet-service") {
-      // From subnet to destination host peer's chosen service
-      const subnetCidr = fromSubnet.value?.cidr;
-      const svcName = selectedService.value;
-      if (!subnetCidr || !svcName) {
-        error.value = "Missing subnet or service";
-        return;
-      }
-      const ok = await backend.connectSubnetToService(subnetCidr, svcName);
-      if (!ok) {
-        error.value =
-          backend.lastError || "Backend subnet-service connect failed";
-        return;
+  function cancel () {
+    open.value = false
+    store.tool = 'select'
+  }
+  async function submit () {
+    if (!canSubmit.value) return
+    // Existing check only for p2p/service kinds; membership/service links handled differently
+    if (
+      mode.value === 'p2p'
+      || mode.value === 'service'
+      || mode.value === 'admin-p2p'
+    ) {
+      const existing = store.links.find(
+        l =>
+          l.fromId === fromId.value
+          && l.toId === toId.value
+          && l.kind
+          === (mode.value === 'p2p'
+              ? 'p2p'
+              : (mode.value === 'admin-p2p'
+                ? 'admin-p2p'
+                : 'service'))
+              && (mode.value === 'p2p'
+            || mode.value === 'admin-p2p'
+                || (l as any).serviceName === selectedService.value),
+      )
+      if (existing) {
+        error.value = 'Link already exists'
+        return
       }
     }
-    open.value = false;
-    store.tool = "select";
-  } finally {
-    submitting.value = false;
+    error.value = null
+    submitting.value = true
+    try {
+      switch (mode.value) {
+        case 'p2p': {
+          // Derive usernames from peer objects for backend
+          const aUser = fromPeer.value?.name
+          const bUser = toPeer.value?.name
+          if (!aUser || !bUser) {
+            error.value = 'Missing peer usernames'
+            return
+          }
+          const ok = await backend.connectPeers(aUser, bUser)
+          if (!ok) {
+            error.value = backend.lastError || 'Backend connect failed'
+            return
+          }
+          // The topology refresh will add the p2p link; no manual push needed
+
+          break
+        }
+        case 'admin-p2p': {
+          const adminUser = fromPeer.value?.name
+          const peerUser = toPeer.value?.name
+          if (!adminUser || !peerUser) {
+            error.value = 'Missing peer usernames'
+            return
+          }
+          const ok = await backend.connectAdminPeerToPeer(adminUser, peerUser)
+          if (!ok) {
+            error.value = backend.lastError || 'Backend admin link failed'
+            return
+          }
+
+          break
+        }
+        case 'service': {
+          const aUser = fromPeer.value?.name
+          const svcName = selectedService.value
+          if (!aUser || !svcName) {
+            error.value = 'Missing peer or service'
+            return
+          }
+          const ok = await backend.connectPeerToService(aUser, svcName)
+          if (!ok) {
+            error.value = backend.lastError || 'Backend service connect failed'
+            return
+          }
+          // Topology refresh will cause service link(s) to appear via new service grouping.
+
+          break
+        }
+        case 'peer-subnet': {
+          // Support reversed orientation (subnet -> peer) by swapping roles
+          let peerUser: string | undefined
+          let subnetCidr: string | undefined
+          if (fromType.value === 'peer' && toType.value === 'subnet') {
+            peerUser = fromPeer.value?.name
+            subnetCidr = toSubnet.value?.cidr
+          } else if (fromType.value === 'subnet' && toType.value === 'peer') {
+            peerUser = toPeer.value?.name
+            subnetCidr = fromSubnet.value?.cidr
+          }
+          if (!peerUser || !subnetCidr) {
+            error.value = 'Missing peer or subnet'
+            return
+          }
+          const ok = await backend.connectPeerToSubnet(peerUser, subnetCidr)
+          if (!ok) {
+            error.value = backend.lastError || 'Backend peer-subnet connect failed'
+            return
+          }
+
+          break
+        }
+        case 'admin-peer-subnet': {
+          const adminUser = fromPeer.value?.name
+          const subnetCidr = toSubnet.value?.cidr
+          if (!adminUser || !subnetCidr) {
+            error.value = 'Missing peer or subnet'
+            return
+          }
+          const ok = await backend.connectAdminPeerToSubnet(adminUser, subnetCidr)
+          if (!ok) {
+            error.value
+              = backend.lastError || 'Backend admin peer-subnet connect failed'
+            return
+          }
+
+          break
+        }
+        case 'subnet-subnet': {
+          const aCidr = fromSubnet.value?.cidr
+          const bCidr = toSubnet.value?.cidr
+          if (!aCidr || !bCidr) {
+            error.value = 'Missing subnets'
+            return
+          }
+          const ok = await backend.connectSubnetToSubnet(aCidr, bCidr)
+          if (!ok) {
+            error.value
+              = backend.lastError || 'Backend subnet-subnet connect failed'
+            return
+          }
+
+          break
+        }
+        case 'admin-subnet-subnet': {
+          const adminCidr = fromSubnet.value?.cidr
+          const targetCidr = toSubnet.value?.cidr
+          if (!adminCidr || !targetCidr) {
+            error.value = 'Missing subnets'
+            return
+          }
+          const ok = await backend.connectAdminSubnetToSubnet(
+            adminCidr,
+            targetCidr,
+          )
+          if (!ok) {
+            error.value = backend.lastError || 'Backend admin subnet link failed'
+            return
+          }
+
+          break
+        }
+        case 'subnet-service': {
+          // From subnet to destination host peer's chosen service
+          const subnetCidr = fromSubnet.value?.cidr
+          const svcName = selectedService.value
+          if (!subnetCidr || !svcName) {
+            error.value = 'Missing subnet or service'
+            return
+          }
+          const ok = await backend.connectSubnetToService(subnetCidr, svcName)
+          if (!ok) {
+            error.value
+              = backend.lastError || 'Backend subnet-service connect failed'
+            return
+          }
+
+          break
+        }
+      // No default
+      }
+      open.value = false
+      store.tool = 'select'
+    } finally {
+      submitting.value = false
+    }
   }
-}
-// When dialog closes by clicking outside or pressing ESC, also revert to select tool
-watch(open, (now, prev) => {
-  if (prev && !now) {
-    store.tool = "select";
-  }
-});
-defineExpose({ show });
+  // When dialog closes by clicking outside or pressing ESC, also revert to select tool
+  watch(open, (now, prev) => {
+    if (prev && !now) {
+      store.tool = 'select'
+    }
+  })
+  defineExpose({ show })
 </script>
